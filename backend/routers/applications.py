@@ -12,8 +12,10 @@ router = APIRouter(prefix="/api/applications", tags=["applications"])
 
 
 def _enrich(a: Application) -> ApplicationOut:
-    """Attach job + employer info to an Application for the frontend."""
+    """Attach job + employer + student info to an Application response."""
     out = ApplicationOut.model_validate(a)
+
+    # ---- Job details (for the student's dashboard) ----
     job = a.job
     if job:
         out.job_title = job.title
@@ -22,6 +24,19 @@ def _enrich(a: Application) -> ApplicationOut:
         if job.employer:
             out.employer_name = job.employer.full_name
             out.company_name = job.employer.company_name
+
+    # ---- Student details (for the employer's dashboard) ----
+    student = a.student
+    if student:
+        out.student_name = student.full_name
+        out.student_email = student.email
+        out.student_city = student.city
+        out.student_phone = student.phone
+        out.student_bio = student.bio
+        out.student_skills = list(student.skills or [])
+        out.student_availability = student.availability
+        out.student_resume_path = student.resume_path
+
     return out
 
 
@@ -79,7 +94,12 @@ def job_apps(
     j = db.get(Job, job_id)
     if not j or j.employer_id != user.id:
         raise HTTPException(404, "Not found")
-    rows = db.query(Application).filter(Application.job_id == job_id).all()
+    rows = (
+        db.query(Application)
+        .filter(Application.job_id == job_id)
+        .order_by(Application.match_score.desc(), Application.created_at.desc())
+        .all()
+    )
     return [_enrich(a) for a in rows]
 
 

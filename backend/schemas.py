@@ -94,12 +94,24 @@ class ApplicationOut(BaseModel):
     status: str
     match_score: float
     created_at: datetime
-    # ---- enriched fields (added by router._enrich) ----
+
+    # ---- job enrichment (shown on student's dashboard) ----
     job_title: Optional[str] = None
     job_city: Optional[str] = None
     job_pay: Optional[str] = None
     employer_name: Optional[str] = None
     company_name: Optional[str] = None
+
+    # ---- student enrichment (shown on employer's dashboard) ----
+    student_name: Optional[str] = None
+    student_email: Optional[str] = None
+    student_city: Optional[str] = None
+    student_phone: Optional[str] = None
+    student_bio: Optional[str] = None
+    student_skills: Optional[List[str]] = None
+    student_availability: Optional[str] = None
+    student_resume_path: Optional[str] = None
+
     class Config:
         from_attributes = True
 

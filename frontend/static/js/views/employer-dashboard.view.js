@@ -46,6 +46,10 @@ export async function employerDashboardView() {
   </section>`;
 }
 
+// ---------------------------------------------------------------------------
+// Bindings
+// ---------------------------------------------------------------------------
+
 function bind(jobs) {
   document.querySelector("[data-new-job]")?.addEventListener("click", openPostModal);
   document.querySelectorAll("[data-del-job]").forEach(b => b.addEventListener("click", async () => {
@@ -56,8 +60,14 @@ function bind(jobs) {
       window.dispatchEvent(new Event("hashchange"));
     } catch (e) { toast.error(e.message); }
   }));
-  document.querySelectorAll("[data-view-apps]").forEach(b => b.addEventListener("click", () => openApplicants(Number(b.dataset.viewApps), jobs)));
+  document.querySelectorAll("[data-view-apps]").forEach(b =>
+    b.addEventListener("click", () => openApplicants(Number(b.dataset.viewApps), jobs))
+  );
 }
+
+// ---------------------------------------------------------------------------
+// Post a new job modal
+// ---------------------------------------------------------------------------
 
 function openPostModal() {
   const root = document.getElementById("modal-root");
@@ -112,35 +122,58 @@ function openPostModal() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Applicants modal
+// ---------------------------------------------------------------------------
+
 async function openApplicants(jobId, jobs) {
   const job = jobs.find(j => j.id === jobId);
   const apps = await employerVM.applicants(jobId);
   const root = document.getElementById("modal-root");
+
+  // Store apps on a WeakMap-free global so the inner modals can access them
+  window.__sh_apps = apps;
+
   root.innerHTML = `
     <div class="modal-backdrop" data-close>
-      <div class="modal" data-modal style="width:min(100%,720px)">
+      <div class="modal" data-modal style="width:min(100%,820px)">
         <div class="modal__head">
           <div>
-            <h3 style="margin:0">Applicants</h3>
+            <h3 style="margin:0">Applicants (${apps.length})</h3>
             <div class="text-muted text-sm">${escape(job.title)}</div>
           </div>
           <button class="btn btn--icon btn--ghost" data-close>✕</button>
         </div>
+
         ${apps.length ? `
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Student ID</th><th>Match</th><th>Note</th><th>Status</th><th></th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Applicant</th>
+                  <th>Match</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
               <tbody>
                 ${apps.map(a => `
                   <tr>
-                    <td>#${a.student_id}</td>
+                    <td>
+                      <div style="font-weight:600;color:var(--c-text)">${escape(a.student_name || `Student #${a.student_id}`)}</div>
+                      <div class="text-xs text-muted" style="margin-top:.15rem">
+                        ${a.student_city ? `📍 ${escape(a.student_city)}` : ""}
+                        ${a.student_availability ? ` · ⏰ ${escape(a.student_availability)}` : ""}
+                      </div>
+                    </td>
                     <td><span class="badge badge--brand">${a.match_score}%</span></td>
-                    <td class="text-xs">${escape((a.cover_note || "").slice(0, 60)) || "—"}</td>
-                    <td><span class="badge ${a.statusBadge}">${a.status}</span></td>
                     <td>
                       <select class="select" data-status="${a.id}" style="padding:.35rem .5rem;font-size:.8rem">
                         ${["pending","shortlisted","rejected","hired"].map(s => `<option ${s === a.status ? "selected" : ""}>${s}</option>`).join("")}
                       </select>
+                    </td>
+                    <td>
+                      <button class="btn btn--soft btn--sm" data-view-profile="${a.id}">View profile</button>
                     </td>
                   </tr>`).join("")}
               </tbody>
@@ -153,6 +186,7 @@ async function openApplicants(jobId, jobs) {
   root.querySelector("[data-modal]").addEventListener("click", e => e.stopPropagation());
   function close() { root.innerHTML = ""; }
 
+  // Status changes
   root.querySelectorAll("[data-status]").forEach(sel => {
     sel.addEventListener("change", async () => {
       try {
@@ -161,10 +195,112 @@ async function openApplicants(jobId, jobs) {
       } catch (e) { toast.error(e.message); }
     });
   });
+
+  // View profile buttons
+  root.querySelectorAll("[data-view-profile]").forEach(b => {
+    b.addEventListener("click", () => {
+      const a = window.__sh_apps.find(x => x.id === Number(b.dataset.viewProfile));
+      if (a) openProfileModal(a);
+    });
+  });
 }
+
+// ---------------------------------------------------------------------------
+// Applicant profile modal
+// ---------------------------------------------------------------------------
+
+function openProfileModal(a) {
+  const root = document.getElementById("modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" data-close>
+      <div class="modal" data-modal style="width:min(100%,640px)">
+        <div class="modal__head">
+          <div>
+            <h3 style="margin:0">${escape(a.student_name || `Student #${a.student_id}`)}</h3>
+            <div class="text-muted text-sm">
+              Applied ${new Date(a.created_at).toLocaleDateString()} · Match ${a.match_score}%
+            </div>
+          </div>
+          <button class="btn btn--icon btn--ghost" data-close>✕</button>
+        </div>
+
+        <!-- Contact info -->
+        <div class="grid grid--2" style="gap:.75rem">
+          <div class="card" style="padding:1rem">
+            <div class="stat__label">Email</div>
+            <div style="margin-top:.25rem;font-size:.92rem;word-break:break-all">
+              ${a.student_email
+                ? `<a href="mailto:${escape(a.student_email)}" style="color:var(--brand-600)">${escape(a.student_email)}</a>`
+                : "—"}
+            </div>
+          </div>
+          <div class="card" style="padding:1rem">
+            <div class="stat__label">Phone</div>
+            <div style="margin-top:.25rem;font-size:.92rem">
+              ${a.student_phone
+                ? `<a href="tel:${escape(a.student_phone)}" style="color:var(--brand-600)">${escape(a.student_phone)}</a>`
+                : "—"}
+            </div>
+          </div>
+          <div class="card" style="padding:1rem">
+            <div class="stat__label">City</div>
+            <div style="margin-top:.25rem;font-size:.92rem">${escape(a.student_city || "—")}</div>
+          </div>
+          <div class="card" style="padding:1rem">
+            <div class="stat__label">Availability</div>
+            <div style="margin-top:.25rem;font-size:.92rem">${escape(a.student_availability || "—")}</div>
+          </div>
+        </div>
+
+        <!-- Skills -->
+        ${a.student_skills && a.student_skills.length ? `
+          <h4 class="mt-6 mb-2" style="font-size:.95rem">Skills</h4>
+          <div class="chip-list">
+            ${a.student_skills.map(s => `<span class="chip">${escape(s)}</span>`).join("")}
+          </div>
+        ` : ""}
+
+        <!-- Bio -->
+        ${a.student_bio ? `
+          <h4 class="mt-6 mb-2" style="font-size:.95rem">About</h4>
+          <p style="font-size:.9rem;white-space:pre-wrap;margin:0">${escape(a.student_bio)}</p>
+        ` : ""}
+
+        <!-- Cover note -->
+        ${a.cover_note ? `
+          <h4 class="mt-6 mb-2" style="font-size:.95rem">Cover note</h4>
+          <div style="background:var(--c-bg-soft);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:.85rem;font-size:.9rem;white-space:pre-wrap;color:var(--c-text-soft)">${escape(a.cover_note)}</div>
+        ` : ""}
+
+        <!-- Resume / CV -->
+        <h4 class="mt-6 mb-2" style="font-size:.95rem">Resume / CV</h4>
+        ${a.student_resume_path
+          ? `<a href="${escape(a.student_resume_path)}" target="_blank" rel="noopener" class="btn btn--primary" style="display:inline-flex">📄 Open Resume</a>
+             <div class="text-xs text-muted mt-2" style="word-break:break-all">${escape(a.student_resume_path)}</div>`
+          : `<div class="empty" style="padding:1.25rem"><p style="margin:0;font-size:.9rem">This applicant hasn't uploaded a resume yet.</p></div>`}
+
+        <div class="flex gap-2 mt-6" style="justify-content:flex-end">
+          <button class="btn btn--ghost" data-close>Close</button>
+        </div>
+      </div>
+    </div>`;
+
+  root.querySelectorAll("[data-close]").forEach(el => el.addEventListener("click", close));
+  root.querySelector("[data-modal]").addEventListener("click", e => e.stopPropagation());
+  function close() { root.innerHTML = ""; }
+}
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
 
 function redirectLogin() {
   setTimeout(() => { window.location.hash = "#/login"; }, 0);
   return `<div class="container section"><p>Redirecting…</p></div>`;
 }
-function escape(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c])); }
+
+function escape(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
