@@ -1,49 +1,118 @@
 """
-Transactional email service for ShiftHub — powered by Brevo SMTP relay.
+Transactional email service for ShiftHub.
 
-Uses Python's standard-library `smtplib` + `email.mime` — no extra SDK.
-Docs: https://developers.brevo.com/docs/smtp-relay
+Preferred transport: Brevo HTTP API (works on Render / Fly / Vercel
+and any host that blocks outbound SMTP).
+
+Fallback transport: Brevo SMTP relay (works locally; blocked on
+Render's free tier — kept for local dev convenience).
+
+If neither is configured, emails are printed to the server console.
 """
 import smtplib
 import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr
+from typing import Optional
+
+import httpx
+
 from ..config import get_settings
 
 settings = get_settings()
 
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 def send_email(to: str, subject: str, html: str, to_name: str = "") -> bool:
     """
-    Send a transactional email through Brevo's SMTP relay.
+    Send a transactional email.
 
-    Returns True on success, False on failure.
-    In dev (SMTP_HOST empty), prints the email to the server console instead.
+    Tries Brevo HTTP API first (works everywhere), then SMTP (local dev only),
+    then falls back to printing to the console.
     """
-    # -------- DEV FALLBACK: no SMTP configured --------
-    if not settings.SMTP_HOST or not settings.SMTP_USER or not settings.SMTP_PASSWORD:
-        print(
-            f"\n📧 [DEV EMAIL — SMTP not configured]\n"
-            f"To: {to_name or to} <{to}>\n"
-            f"Subject: {subject}\n"
-            f"---\n{html}\n---\n"
-        )
-        return True
+    # -------- 1. HTTP API (production-safe) --------
+    if settings.BREVO_API_KEY:
+        ok = _send_via_brevo_api(to, to_name, subject, html)
+        if ok:
+            return True
+        print("⚠️  Brevo HTTP API failed — trying SMTP fallback…")
 
-    # -------- Build the message --------
+    # -------- 2. SMTP (local dev / non-blocked hosts) --------
+    if settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASSWORD:
+        ok = _send_via_smtp(to, to_name, subject, html)
+        if ok:
+            return True
+        print("⚠️  SMTP also failed — falling back to console output.")
+
+    # -------- 3. Console (dev only) --------
+    print(
+        f"\n📧 [DEV EMAIL — no transport configured]\n"
+        f"To: {to_name or to} <{to}>\n"
+        f"Subject: {subject}\n"
+        f"---\n{html}\n---\n"
+    )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Transport 1 — Brevo HTTP API
+# ---------------------------------------------------------------------------
+
+def _send_via_brevo_api(to: str, to_name: str, subject: str, html: str) -> bool:
+    payload = {
+        "sender": {
+            "name": settings.BREVO_SENDER_NAME,
+            "email": settings.BREVO_SENDER_EMAIL,
+        },
+        "to": [
+            {"email": to, "name": to_name or to}
+        ],
+        "subject": subject,
+        "htmlContent": html,
+    }
+    headers = {
+        "accept": "application/json",
+        "api-key": settings.BREVO_API_KEY,
+        "content-type": "application/json",
+    }
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.post(BREVO_API_URL, json=payload, headers=headers)
+        if resp.status_code in (200, 201, 202):
+            print(f"✅ Brevo API: email sent to {to} (status {resp.status_code})")
+            return True
+        print(f"❌ Brevo API error {resp.status_code}: {resp.text[:300]}")
+        return False
+    except httpx.TimeoutException:
+        print("❌ Brevo API timeout (15s)")
+        return False
+    except Exception as e:
+        print(f"❌ Brevo API failed: {type(e).__name__}: {e}")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Transport 2 — Brevo SMTP relay (fallback)
+# ---------------------------------------------------------------------------
+
+def _send_via_smtp(to: str, to_name: str, subject: str, html: str) -> bool:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = formataddr((settings.SMTP_FROM_NAME, settings.SMTP_FROM_EMAIL))
     msg["To"] = formataddr((to_name or to, to))
     msg.attach(MIMEText(html, "html", "utf-8"))
 
-    # -------- Send via Brevo SMTP --------
     try:
         context = ssl.create_default_context()
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=20) as server:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
             server.ehlo()
-            server.starttls(context=context)          # Upgrade to TLS
+            server.starttls(context=context)
             server.ehlo()
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.sendmail(
@@ -55,13 +124,13 @@ def send_email(to: str, subject: str, html: str, to_name: str = "") -> bool:
         return True
     except smtplib.SMTPAuthenticationError as e:
         print(f"❌ Brevo SMTP auth failed: {e}")
-        print("   → Check SMTP_USER and SMTP_PASSWORD in .env (regenerate the key if needed).")
         return False
-    except smtplib.SMTPException as e:
-        print(f"❌ Brevo SMTP error: {type(e).__name__}: {e}")
+    except (TimeoutError, OSError) as e:
+        print(f"❌ Brevo SMTP network error: {type(e).__name__}: {e}")
+        print("   → On Render, port 587 is blocked. Use BREVO_API_KEY instead.")
         return False
     except Exception as e:
-        print(f"❌ Email send failed: {type(e).__name__}: {e}")
+        print(f"❌ Brevo SMTP failed: {type(e).__name__}: {e}")
         return False
 
 
@@ -70,7 +139,6 @@ def send_email(to: str, subject: str, html: str, to_name: str = "") -> bool:
 # ---------------------------------------------------------------------------
 
 def verification_email(name: str, link: str) -> str:
-    """HTML body for the email-verification message."""
     return f"""
     <div style="font-family:Inter,-apple-system,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:auto;padding:32px;background:#f8fafc;border-radius:14px">
       <h2 style="color:#4f46e5;margin:0 0 12px">Welcome to ShiftHub, {name} 👋</h2>
@@ -89,7 +157,6 @@ def verification_email(name: str, link: str) -> str:
 
 
 def reset_email(name: str, link: str) -> str:
-    """HTML body for the password-reset message."""
     return f"""
     <div style="font-family:Inter,-apple-system,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:auto;padding:32px;background:#f8fafc;border-radius:14px">
       <h2 style="color:#4f46e5;margin:0 0 12px">Reset your password</h2>

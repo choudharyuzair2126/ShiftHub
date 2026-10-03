@@ -11,23 +11,22 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
     DATABASE_URL: str = "sqlite:///./shifthub.db"
 
-    # Comma-separated list of origins allowed to call the API.
-    # In dev, defaults to "*". In prod, set to your Vercel URL(s).
-    # Examples:
-    #   "*"
-    #   "https://shifthub.vercel.app"
-    #   "https://shifthub.vercel.app,https://shifthub-git-main-user.vercel.app"
     CORS_ORIGINS: str = "*"
 
-    # ---- Gemini (primary) ----
+    # ---- Gemini ----
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
 
-    # ---- Groq (fallback) ----
+    # ---- Groq ----
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
-    # ---- Brevo SMTP ----
+    # ---- Brevo (HTTP API — preferred) ----
+    BREVO_API_KEY: str = ""
+    BREVO_SENDER_EMAIL: str = "no-reply@shifthub.app"
+    BREVO_SENDER_NAME: str = "ShiftHub"
+
+    # ---- Brevo (SMTP — fallback for local dev only) ----
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
@@ -44,16 +43,12 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        """
-        Parse the comma-separated CORS_ORIGINS into a list.
-        Trailing slashes are stripped, and empty entries are ignored.
-        """
         raw = (self.CORS_ORIGINS or "").strip()
         if not raw or raw == "*":
             return ["*"]
         out = []
         for o in raw.split(","):
-            o = o.strip().rstrip("/")   # ← strip trailing slash
+            o = o.strip().rstrip("/")
             if o:
                 out.append(o)
         return out
