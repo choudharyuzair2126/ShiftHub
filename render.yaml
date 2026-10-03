@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: shifthub-backend
+    runtime: python
+    plan: free
+    region: oregon
+    branch: main
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      # The rest are set in the Render dashboard (secrets):
+      #   DATABASE_URL, SECRET_KEY, CORS_ORIGINS,
+      #   GEMINI_API_KEY, GROQ_API_KEY,
+      #   SMTP_USER, SMTP_PASSWORD, SMTP_FROM_EMAIL,
+      #   CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
