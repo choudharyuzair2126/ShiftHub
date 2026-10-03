@@ -1,6 +1,6 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Application, Job, User
@@ -11,22 +11,26 @@ from ..services.matching_service import match_score
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 
 
-def _enrich(a: Application) -> ApplicationOut:
-    """Attach job + employer + student info to an Application response."""
+def _enrich(a: Application, db: Session) -> ApplicationOut:
+    """
+    Attach job + employer + student info by querying the DB directly.
+    Avoids all lazy-loading / detached-instance pitfalls.
+    """
     out = ApplicationOut.model_validate(a)
 
-    # ---- Job details (for the student's dashboard) ----
-    job = a.job
+    # ---------- Job + Employer ----------
+    job = db.get(Job, a.job_id)
     if job:
         out.job_title = job.title
         out.job_city = job.city
         out.job_pay = job.pay
-        if job.employer:
-            out.employer_name = job.employer.full_name
-            out.company_name = job.employer.company_name
+        employer = db.get(User, job.employer_id)
+        if employer:
+            out.employer_name = employer.full_name
+            out.company_name = employer.company_name
 
-    # ---- Student details (for the employer's dashboard) ----
-    student = a.student
+    # ---------- Student ----------
+    student = db.get(User, a.student_id)
     if student:
         out.student_name = student.full_name
         out.student_email = student.email
@@ -37,24 +41,16 @@ def _enrich(a: Application) -> ApplicationOut:
         out.student_availability = student.availability
         out.student_resume_path = student.resume_path
 
-    # ---- Debug: log what we returned ----
+    # ---------- Debug log ----------
     print(
-        f"📄 enrich app_id={a.id} student_id={a.student_id} "
-        f"student_name={out.student_name!r} resume={bool(out.student_resume_path)}"
+        f"📄 enrich app_id={a.id} "
+        f"student_id={a.student_id} "
+        f"found_student={student is not None} "
+        f"name={out.student_name!r} "
+        f"resume={bool(out.student_resume_path)}"
     )
 
     return out
-
-
-def _base_query(db: Session):
-    """
-    Base query that eager-loads Job, Employer, and Student.
-    joinedload prevents lazy-loading surprises.
-    """
-    return db.query(Application).options(
-        joinedload(Application.job).joinedload(Job.employer),
-        joinedload(Application.student),
-    )
 
 
 @router.post("/job/{job_id}", response_model=ApplicationOut)
@@ -85,10 +81,7 @@ def apply(
     db.add(a)
     db.commit()
     db.refresh(a)
-
-    # Reload with eager loading so the response includes everything
-    a = _base_query(db).filter(Application.id == a.id).first()
-    return _enrich(a)
+    return _enrich(a, db)
 
 
 @router.get("/mine", response_model=List[ApplicationOut])
@@ -97,12 +90,12 @@ def my_apps(
     db: Session = Depends(get_db),
 ):
     rows = (
-        _base_query(db)
+        db.query(Application)
         .filter(Application.student_id == user.id)
         .order_by(Application.created_at.desc())
         .all()
     )
-    return [_enrich(a) for a in rows]
+    return [_enrich(a, db) for a in rows]
 
 
 @router.get("/job/{job_id}", response_model=List[ApplicationOut])
@@ -116,12 +109,12 @@ def job_apps(
         raise HTTPException(404, "Not found")
 
     rows = (
-        _base_query(db)
+        db.query(Application)
         .filter(Application.job_id == job_id)
         .order_by(Application.match_score.desc(), Application.created_at.desc())
         .all()
     )
-    return [_enrich(a) for a in rows]
+    return [_enrich(a, db) for a in rows]
 
 
 @router.patch("/{app_id}/status")

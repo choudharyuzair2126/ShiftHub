@@ -95,14 +95,12 @@ class ApplicationOut(BaseModel):
     match_score: float
     created_at: datetime
 
-    # ---- job enrichment (shown on student's dashboard) ----
     job_title: Optional[str] = None
     job_city: Optional[str] = None
     job_pay: Optional[str] = None
     employer_name: Optional[str] = None
     company_name: Optional[str] = None
 
-    # ---- student enrichment (shown on employer's dashboard) ----
     student_name: Optional[str] = None
     student_email: Optional[str] = None
     student_city: Optional[str] = None
@@ -114,8 +112,6 @@ class ApplicationOut(BaseModel):
 
     class Config:
         from_attributes = True
-
-
 class ChatRequest(BaseModel):
     message: str
     history: Optional[List[dict]] = []
