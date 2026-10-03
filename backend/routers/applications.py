@@ -12,13 +12,9 @@ router = APIRouter(prefix="/api/applications", tags=["applications"])
 
 
 def _enrich(a: Application, db: Session) -> ApplicationOut:
-    """
-    Attach job + employer + student info by querying the DB directly.
-    Avoids all lazy-loading / detached-instance pitfalls.
-    """
+    """Attach job + employer + student info by querying the DB directly."""
     out = ApplicationOut.model_validate(a)
 
-    # ---------- Job + Employer ----------
     job = db.get(Job, a.job_id)
     if job:
         out.job_title = job.title
@@ -29,7 +25,6 @@ def _enrich(a: Application, db: Session) -> ApplicationOut:
             out.employer_name = employer.full_name
             out.company_name = employer.company_name
 
-    # ---------- Student ----------
     student = db.get(User, a.student_id)
     if student:
         out.student_name = student.full_name
@@ -41,7 +36,6 @@ def _enrich(a: Application, db: Session) -> ApplicationOut:
         out.student_availability = student.availability
         out.student_resume_path = student.resume_path
 
-    # ---------- Debug log ----------
     print(
         f"📄 enrich app_id={a.id} "
         f"student_id={a.student_id} "
@@ -49,7 +43,6 @@ def _enrich(a: Application, db: Session) -> ApplicationOut:
         f"name={out.student_name!r} "
         f"resume={bool(out.student_resume_path)}"
     )
-
     return out
 
 
@@ -60,6 +53,10 @@ def apply(
     user: User = Depends(require_role("student")),
     db: Session = Depends(get_db),
 ):
+    # ---- Verification gate ----
+    if not user.is_verified:
+        raise HTTPException(403, "Please verify your email before applying to jobs")
+
     j = db.get(Job, job_id)
     if not j or not j.is_active:
         raise HTTPException(404, "Job not available")
@@ -107,7 +104,6 @@ def job_apps(
     j = db.get(Job, job_id)
     if not j or j.employer_id != user.id:
         raise HTTPException(404, "Not found")
-
     rows = (
         db.query(Application)
         .filter(Application.job_id == job_id)

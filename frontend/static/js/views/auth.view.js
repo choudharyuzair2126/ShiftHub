@@ -1,3 +1,5 @@
+import { session } from "../core/store.js";
+
 export function loginView() {
   return authShell("Welcome back", "Sign in to continue to ShiftHub", `
     <form data-form="login">
@@ -57,6 +59,52 @@ export function resetView() {
   `);
 }
 
+// ---------------------------------------------------------------------------
+// Verify-pending page — shown when user is logged in but not verified
+// ---------------------------------------------------------------------------
+
+export function verifyPendingView() {
+  const u = session.user;
+  const email = u?.email || "your email";
+  const firstName = (u?.full_name || "there").split(" ")[0];
+
+  return `
+  <div class="auth-wrap">
+    <div class="auth-card" style="max-width:520px">
+      <div class="text-center mb-4">
+        <div style="font-size:3.25rem;line-height:1;margin-bottom:.5rem">📬</div>
+        <h2>Verify your email</h2>
+        <p class="text-muted text-sm" style="margin-top:.5rem">
+          Hi ${escape(firstName)}, we've sent a verification link to
+          <br>
+          <b style="color:var(--c-text);word-break:break-all">${escape(email)}</b>
+        </p>
+      </div>
+
+      <div class="card" style="background:var(--c-bg-soft);padding:1rem;border:1px solid var(--c-border)">
+        <p style="margin:0;font-size:.88rem;line-height:1.55">
+          Click the link in the email to activate your account.
+          <br><br>
+          <b>Didn't receive it?</b> Check your spam folder, or click the button below to resend.
+        </p>
+      </div>
+
+      <div class="flex flex-col gap-2 mt-4">
+        <button class="btn btn--primary w-full" data-resend-verify>Resend verification email</button>
+        <button class="btn btn--ghost w-full" data-logout>Sign out</button>
+      </div>
+
+      <div class="text-sm mt-4 text-center text-muted">
+        Already verified? <a href="#/login">Sign in</a>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Shell
+// ---------------------------------------------------------------------------
+
 function authShell(title, subtitle, body) {
   return `
   <div class="auth-wrap">
@@ -69,4 +117,10 @@ function authShell(title, subtitle, body) {
       ${body}
     </div>
   </div>`;
+}
+
+function escape(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
 }

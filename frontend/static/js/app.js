@@ -6,7 +6,7 @@ import { authVM } from "./viewmodels/auth.vm.js";
 import { setChatRefresh } from "./viewmodels/chat.vm.js";
 
 import { homeView } from "./views/home.view.js";
-import { loginView, registerView, forgotView, resetView } from "./views/auth.view.js";
+import { loginView, registerView, forgotView, resetView, verifyPendingView } from "./views/auth.view.js";
 import { jobsView, bindJobs } from "./views/jobs.view.js";
 import { jobDetailView } from "./views/job-detail.view.js";
 import { studentDashboardView } from "./views/student-dashboard.view.js";
@@ -15,12 +15,21 @@ import { renderChatWidget, bindChatWidget } from "./views/chat-widget.view.js";
 
 const router = new Router();
 
+// Routes anyone can access, even when logged-in-but-unverified
+const PUBLIC_ROUTES = [
+  "/", "/login", "/register", "/forgot", "/reset",
+  "/verify", "/verify-pending",
+];
+const isPublicPath = (path) =>
+  PUBLIC_ROUTES.includes(path) || path.startsWith("/jobs");
+
 const routes = {
   "/": homeView,
   "/login": loginView,
   "/register": registerView,
   "/forgot": forgotView,
   "/reset": resetView,
+  "/verify-pending": verifyPendingView,
   "/jobs": jobsView,
   "/jobs/:id": jobDetailView,
   "/dashboard": async () => {
@@ -30,9 +39,19 @@ const routes = {
       : await studentDashboardView();
   },
   "/verify": async (ctx) => {
-    try { await authVM.verify(ctx.params.token); } catch (e) { toast.error(e.message); }
-    window.location.hash = "#/login";
-    return `<div class="container section"><p>Redirecting…</p></div>`;
+    try {
+      await authVM.verify(ctx.params.token);
+      // authVM.verify already refreshed session.user
+      if (session.user && session.user.is_verified) {
+        window.location.hash = "#/dashboard";
+      } else {
+        window.location.hash = "#/login";
+      }
+    } catch (e) {
+      toast.error(e.message);
+      window.location.hash = "#/login";
+    }
+    return `<div class="container section"><p>Verifying…</p></div>`;
   },
 };
 
@@ -41,17 +60,13 @@ Object.entries(routes).forEach(([p, h]) => router.on(p, h));
 // ---------------------------------------------------------------------------
 // Chat widget refresh hook
 // ---------------------------------------------------------------------------
-// The chat ViewModel calls this whenever its state changes (message added,
-// loading toggled). It re-renders ONLY the chat widget, not the whole app,
-// so chat interactions don't disturb the current page.
+
 function refreshChat() {
   const mount = document.getElementById("chat-widget-root");
   if (!mount) return;
   mount.innerHTML = renderChatWidget();
   bindChatWidget(mount);
 }
-
-// Register the hook as soon as this module loads.
 setChatRefresh(refreshChat);
 
 // ---------------------------------------------------------------------------
@@ -133,12 +148,25 @@ function escape(s) {
 }
 
 // ---------------------------------------------------------------------------
-// Main render
+// Main render (with verification guard)
 // ---------------------------------------------------------------------------
 
 async function render() {
+  const { path } = router.current();
+
+  // ---- GUARD: logged in but not verified → force verify page ----
+  if (
+    session.user &&
+    !session.user.is_verified &&
+    !isPublicPath(path) &&
+    path !== "/verify-pending"
+  ) {
+    window.location.hash = "#/verify-pending";
+    return; // hashchange will re-trigger render()
+  }
+
   const app = document.getElementById("app");
-  const { html, path } = await router.resolve();
+  const { html } = await router.resolve();
 
   app.innerHTML = `
     ${navHTML()}
@@ -147,25 +175,22 @@ async function render() {
     <div id="chat-widget-root">${renderChatWidget()}</div>
   `;
 
-  // Theme toggle buttons
   document.querySelectorAll("[data-theme-toggle]").forEach(btn => {
     btn.textContent = document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙";
     btn.addEventListener("click", toggleTheme);
   });
 
-  // Logout
   document.querySelector("[data-logout]")?.addEventListener("click", () => {
     authVM.logout();
     window.location.hash = "#/";
     render();
   });
 
-  // Bind chat widget to its dedicated mount point
   const chatMount = document.getElementById("chat-widget-root");
   if (chatMount) bindChatWidget(chatMount);
 
-  // Bind page-specific forms and widgets
   bindForms();
+  bindResendVerification();
   if (path === "/jobs") bindJobs();
 }
 
@@ -181,11 +206,11 @@ function bindForms() {
       const data = Object.fromEntries(fd);
       try {
         if (form.dataset.form === "login") {
-          await authVM.login({ email: data.email, password: data.password });
-          window.location.hash = "#/dashboard";
+          const u = await authVM.login({ email: data.email, password: data.password });
+          window.location.hash = u.is_verified ? "#/dashboard" : "#/verify-pending";
         } else if (form.dataset.form === "register") {
-          await authVM.register(data);
-          window.location.hash = "#/dashboard";
+          const u = await authVM.register(data);
+          window.location.hash = u.is_verified ? "#/dashboard" : "#/verify-pending";
         } else if (form.dataset.form === "forgot") {
           await authVM.forgot(data.email);
           window.location.hash = "#/login";
@@ -199,6 +224,28 @@ function bindForms() {
         toast.error(err.message);
       }
     });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Resend verification button (on the /verify-pending page)
+// ---------------------------------------------------------------------------
+
+function bindResendVerification() {
+  const btn = document.querySelector("[data-resend-verify]");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Sending…";
+    try {
+      await authVM.resendVerification();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
   });
 }
 
@@ -224,9 +271,10 @@ async function boot() {
   await authVM.loadMe();
   if (!session.token) tokenStore.clear();
 
-  // Special-case: if we land directly on /jobs, jobsView() renders its own
-  // skeleton first, so we mount the shell and let it handle the rest.
-  if (window.location.hash.startsWith("#/jobs") && !window.location.hash.includes("/jobs/")) {
+  const { path } = router.current();
+
+  // Special case: direct hit on /jobs (jobsView renders its own skeleton)
+  if (path === "/jobs") {
     const app = document.getElementById("app");
     app.innerHTML = `
       ${navHTML()}
@@ -248,7 +296,6 @@ async function boot() {
 
     const chatMount = document.getElementById("chat-widget-root");
     if (chatMount) bindChatWidget(chatMount);
-
     bindJobs();
   } else {
     await render();

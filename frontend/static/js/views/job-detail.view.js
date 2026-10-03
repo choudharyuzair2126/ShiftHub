@@ -4,13 +4,11 @@ import { session } from "../core/store.js";
 import { tokenStore } from "../core/api.js";
 import { toast } from "../core/toast.js";
 
-// Strip trailing slashes from the injected API base so raw fetches work too.
 const API = (typeof window !== "undefined" && window.SHIFTHUB_API_BASE
   ? String(window.SHIFTHUB_API_BASE).replace(/\/+$/, "")
   : "");
 
 export async function jobDetailView(ctx) {
-  // The router passes a context object: { params: { id: "123", ...qs } }
   const id = Number(ctx.params.id);
   if (!id || Number.isNaN(id)) {
     return `<div class="container section"><div class="empty"><div class="empty__icon">🔍</div><h3>Invalid job</h3><p>The job you're looking for doesn't exist.</p></div></div>`;
@@ -23,9 +21,10 @@ export async function jobDetailView(ctx) {
     return `<div class="container section"><div class="empty"><div class="empty__icon">🔍</div><h3>Job not found</h3><p>${escape(e.message)}</p></div></div>`;
   }
 
-  const canApply = session.user && session.user.role === "student";
+  const loggedIn = !!session.user;
+  const verified = !!(session.user && session.user.is_verified);
+  const canApply = loggedIn && verified && session.user.role === "student";
 
-  // ---- Check if this student already applied to this job ----
   let alreadyApplied = false;
   if (canApply) {
     try {
@@ -36,7 +35,6 @@ export async function jobDetailView(ctx) {
     }
   }
 
-  // ---- Match score (only if not applied yet — no need to compute for applied) ----
   let score = null;
   if (canApply && !alreadyApplied) {
     try {
@@ -83,23 +81,30 @@ export async function jobDetailView(ctx) {
         ` : ""}
 
         <div class="mt-6" id="apply-zone">
-          ${renderApplyZone({ canApply, alreadyApplied, loggedIn: !!session.user })}
+          ${renderApplyZone({ loggedIn, verified, canApply, alreadyApplied })}
         </div>
       </div>
     </div>
   </section>`;
 }
 
-// ---------------------------------------------------------------------------
-// Apply button logic
-// ---------------------------------------------------------------------------
-
-function renderApplyZone({ canApply, alreadyApplied, loggedIn }) {
-  if (!canApply) {
-    return loggedIn
-      ? `<div class="badge badge--slate">Only students can apply</div>`
-      : `<a href="#/login" class="btn btn--primary btn--lg">Sign in to apply</a>`;
+function renderApplyZone({ loggedIn, verified, canApply, alreadyApplied }) {
+  // Logged in but email not verified
+  if (loggedIn && !verified) {
+    return `
+      <a href="#/verify-pending" class="btn btn--primary btn--lg">Verify email to apply</a>
+      <div class="text-sm text-muted mt-2">Please verify your email before applying to jobs.</div>
+    `;
   }
+
+  if (!loggedIn) {
+    return `<a href="#/login" class="btn btn--primary btn--lg">Sign in to apply</a>`;
+  }
+
+  if (session.user.role !== "student") {
+    return `<div class="badge badge--slate">Only students can apply</div>`;
+  }
+
   if (alreadyApplied) {
     return `
       <button class="btn btn--lg" disabled
@@ -109,12 +114,9 @@ function renderApplyZone({ canApply, alreadyApplied, loggedIn }) {
       <div class="text-sm text-muted mt-2">You've already submitted an application for this job.</div>
     `;
   }
+
   return `<button class="btn btn--primary btn--lg" data-apply>Apply now</button>`;
 }
-
-// ---------------------------------------------------------------------------
-// Binding
-// ---------------------------------------------------------------------------
 
 function bind(job, alreadyApplied) {
   const btn = document.querySelector("[data-apply]");
@@ -160,8 +162,6 @@ function openApplyModal(job) {
     try {
       await studentVM.apply(job.id, fd.get("cover_note"));
       toast.success("Application sent!");
-
-      // Instantly flip the button to the "Already Applied" state
       const zone = document.getElementById("apply-zone");
       if (zone) {
         zone.innerHTML = `
