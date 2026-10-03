@@ -4,6 +4,11 @@ import { session } from "../core/store.js";
 import { tokenStore } from "../core/api.js";
 import { toast } from "../core/toast.js";
 
+// Strip trailing slashes from the injected API base so raw fetches work too.
+const API = (typeof window !== "undefined" && window.SHIFTHUB_API_BASE
+  ? String(window.SHIFTHUB_API_BASE).replace(/\/+$/, "")
+  : "");
+
 export async function jobDetailView(ctx) {
   // The router passes a context object: { params: { id: "123", ...qs } }
   const id = Number(ctx.params.id);
@@ -35,7 +40,7 @@ export async function jobDetailView(ctx) {
   let score = null;
   if (canApply && !alreadyApplied) {
     try {
-      const res = await fetch(`/api/jobs/${id}/match`, {
+      const res = await fetch(`${API}/api/jobs/${id}/match`, {
         headers: { Authorization: `Bearer ${tokenStore.get()}` },
       });
       if (res.ok) {

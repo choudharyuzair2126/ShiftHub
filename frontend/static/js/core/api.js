@@ -1,6 +1,10 @@
 // Reads the API base URL from window.SHIFTHUB_API_BASE (set in index.html).
 // Falls back to "" (same-origin) if not defined.
-const BASE = (typeof window !== "undefined" && window.SHIFTHUB_API_BASE) || "";
+// Normalizes trailing slashes so we never produce "//api/..." URLs.
+let BASE = "";
+if (typeof window !== "undefined" && window.SHIFTHUB_API_BASE) {
+  BASE = String(window.SHIFTHUB_API_BASE).replace(/\/+$/, ""); // strip all trailing slashes
+}
 
 export const tokenStore = {
   get() { return localStorage.getItem("sh_token") || ""; },
@@ -16,7 +20,10 @@ async function request(path, { method = "GET", body, formData, auth = true } = {
     if (t) headers["Authorization"] = `Bearer ${t}`;
   }
 
-  const res = await fetch(BASE + path, {
+  // Ensure path always starts with a single slash
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+
+  const res = await fetch(BASE + cleanPath, {
     method,
     headers,
     body: formData ? formData : body ? JSON.stringify(body) : undefined,
@@ -41,9 +48,9 @@ async function request(path, { method = "GET", body, formData, auth = true } = {
 }
 
 export const api = {
-  get:  (p, o) => request(p, { ...o, method: "GET" }),
-  post: (p, body, o) => request(p, { ...o, method: "POST", body }),
-  patch:(p, body, o) => request(p, { ...o, method: "PATCH", body }),
-  del:  (p, o) => request(p, { ...o, method: "DELETE" }),
+  get:    (p, o)       => request(p, { ...o, method: "GET" }),
+  post:   (p, body, o) => request(p, { ...o, method: "POST", body }),
+  patch:  (p, body, o) => request(p, { ...o, method: "PATCH", body }),
+  del:    (p, o)       => request(p, { ...o, method: "DELETE" }),
   upload: (p, formData, o) => request(p, { ...o, method: "POST", formData }),
 };
