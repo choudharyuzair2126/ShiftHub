@@ -1,5 +1,6 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+html { height: 100%; }
 body {
   font-family: var(--font-body);
   background: var(--c-bg);
@@ -7,8 +8,21 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
-  overflow-x: hidden; /* Prevent horizontal scroll on mobile */
+  overflow-x: hidden;
 }
+
+/* ---- Sticky footer layout ---- */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+#app > main {
+  flex: 1 0 auto;
+}
+#app > .nav { flex-shrink: 0; }
+#app > .footer { flex-shrink: 0; }
+
 a { color: var(--brand-600); text-decoration: none; }
 a:hover { color: var(--brand-700); }
 h1, h2, h3, h4 { font-family: var(--font-display); color: var(--c-text); margin: 0 0 .5rem; letter-spacing: -.02em; }
@@ -48,7 +62,7 @@ img { max-width: 100%; display: block; }
   display: flex; align-items: center; gap: 1rem;
   min-height: var(--nav-h);
   padding: 0.5rem 0;
-  flex-wrap: wrap; /* Allows wrapping on mobile */
+  flex-wrap: wrap;
 }
 .brand {
   display: flex; align-items: center; gap: .5rem;
@@ -74,22 +88,31 @@ img { max-width: 100%; display: block; }
 .nav__spacer { flex: 1; }
 .nav__actions { display: flex; align-items: center; gap: .5rem; margin-left: auto; }
 
-/* ---- Footer ---- */
+/* ==========================================================================
+   FOOTER — desktop (4 columns)
+   ========================================================================== */
 .footer {
   border-top: 1px solid var(--c-border);
   background: var(--c-bg-soft);
-  padding: 2.5rem 0 1.5rem; margin-top: 3rem;
+  padding: 3rem 0 2rem;
+  margin-top: 3rem;
 }
 .footer__grid {
-  display: grid; gap: 1.5rem;
+  display: grid;
+  gap: 2rem;
   grid-template-columns: 1.5fr repeat(3, 1fr);
 }
-.footer__title { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--c-text-muted); margin-bottom: .5rem; }
-.footer__list { list-style: none; padding: 0; margin: 0; display: grid; gap: .4rem; }
+.footer__title {
+  font-size: .78rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--c-text-muted); margin-bottom: .75rem;
+  font-weight: 700;
+}
+.footer__list { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
 .footer__list a { color: var(--c-text-soft); font-size: .9rem; }
 .footer__list a:hover { color: var(--brand-600); }
 .footer__bottom {
-  margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--c-border);
+  margin-top: 2rem; padding-top: 1.25rem;
+  border-top: 1px solid var(--c-border);
   display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
   color: var(--c-text-muted); font-size: .82rem;
 }
@@ -159,20 +182,19 @@ img { max-width: 100%; display: block; }
 .hidden { display: none !important; }
 
 /* ==========================================================================
-   RESPONSIVE DESIGN
+   RESPONSIVE
    ========================================================================== */
 
-/* Tablet & smaller laptops */
+/* Tablet */
 @media (max-width: 900px) {
   .hero__grid { grid-template-columns: 1fr; text-align: center; gap: 2rem; }
   .hero__cta { justify-content: center; }
   .hero__stats { justify-content: center; }
   .hero__lead { margin-left: auto; margin-right: auto; }
   .grid--3, .grid--2 { grid-template-columns: 1fr; }
-  .footer__grid { grid-template-columns: 1fr 1fr; }
 }
 
-/* Mobile devices */
+/* Mobile */
 @media (max-width: 640px) {
   /* Navbar: two rows */
   .nav__inner { flex-wrap: wrap; padding: .5rem 0; gap: .5rem; }
@@ -183,17 +205,53 @@ img { max-width: 100%; display: block; }
   }
   .nav__spacer { display: none; }
   .nav__actions { margin-left: auto; }
-  .nav__actions .text-sm { display: none !important; } /* Hide username */
+  .nav__actions .text-sm { display: none !important; }
 
   /* Sections */
   .section { padding: 2rem 0; }
   .hero { padding: 2.5rem 0 1.5rem; }
-  
-  /* Footer: single column */
-  .footer__grid { grid-template-columns: 1fr; text-align: center; }
-  .footer__list { align-items: center; }
+
+  /* ---- FOOTER — mobile layout ----
+     Row 1: [Products] [Company]   (2 equal columns)
+     Row 2: [Get in touch]         (spans full width)
+     Row 3: [Brand block]          (spans full width, appears first)
+  --------------------------------------- */
+  .footer { padding: 2rem 0 1.5rem; }
+
+  .footer__grid {
+    grid-template-columns: 1fr 1fr;   /* 2 columns for Products + Company */
+    gap: 1.5rem 1rem;
+    text-align: left;
+  }
+
+  /* Brand block (first child) spans the full row */
+  .footer__grid > div:nth-child(1) {
+    grid-column: 1 / -1;
+    text-align: center;
+    margin-bottom: .5rem;
+  }
+  .footer__grid > div:nth-child(1) p { margin-left: auto; margin-right: auto; }
+
+  /* Products (2nd) & Company (3rd) sit side by side */
+  .footer__grid > div:nth-child(2),
+  .footer__grid > div:nth-child(3) {
+    text-align: left;
+  }
+
+  /* Get in touch (4th) spans full width */
+  .footer__grid > div:nth-child(4) {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding-top: .5rem;
+    border-top: 1px solid var(--c-border);
+    margin-top: .5rem;
+  }
+  .footer__grid > div:nth-child(4) .footer__list {
+    justify-items: center;
+  }
+
   .footer__bottom { flex-direction: column; text-align: center; gap: .5rem; }
-  
+
   /* Dashboard headers */
   .flex.justify-between { flex-direction: column; align-items: flex-start !important; }
   .flex.justify-between > .flex { width: 100%; flex-direction: column; gap: .5rem; margin-top: .75rem; }
@@ -202,32 +260,27 @@ img { max-width: 100%; display: block; }
 
 /* Small phones */
 @media (max-width: 480px) {
-  /* Auth Card */
   .auth-wrap { padding: 1rem; }
   .auth-card { padding: 1.5rem; }
 
-  /* Chat Widget: full screen */
+  /* Chat widget: full screen */
   .chat-panel {
     width: 100vw; height: 100vh; bottom: 0; right: 0;
     border-radius: 0; max-width: 100vw; max-height: 100vh;
   }
   .chat-fab { bottom: 1rem; right: 1rem; }
 
-  /* Buttons */
-  .btn--lg { padding: .8rem 1rem; font-size: .9rem; width: 100%; }
+  .btn--lg { padding: .8rem 1rem; font-size: .9rem; }
   .hero__cta .btn { width: 100%; justify-content: center; }
-  
-  /* Cards & Stats */
+
   .card { padding: 1rem; }
   .stat { padding: 1rem; }
   .stat__value { font-size: 1.4rem; }
   .match { --sz: 44px; font-size: .75rem; }
-  
-  /* Modals */
+
   .modal { padding: 1.25rem; border-radius: var(--radius-lg); }
   .modal__head h3 { font-size: 1rem; }
-  
-  /* Tables */
+
   .table-wrap { border-radius: var(--radius-md); }
   th, td { padding: .6rem .75rem; font-size: .8rem; }
 }
