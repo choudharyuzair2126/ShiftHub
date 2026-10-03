@@ -221,7 +221,7 @@ img { max-width: 100%; display: block; }
   .footer__grid {
     grid-template-columns: 1fr 1fr;   /* 2 columns for Products + Company */
     gap: 1.5rem 1rem;
-    text-align: center;
+    text-align: left;
   }
 
   /* Brand block (first child) spans the full row */
@@ -232,10 +232,14 @@ img { max-width: 100%; display: block; }
   }
   .footer__grid > div:nth-child(1) p { margin-left: auto; margin-right: auto; }
 
-  /* Products (2nd) & Company (3rd) sit side by side */
+  /* Products (2nd) & Company (3rd) sit side by side — centered */
   .footer__grid > div:nth-child(2),
   .footer__grid > div:nth-child(3) {
-    text-align: left;
+  text-align: center;
+  }
+  .footer__grid > div:nth-child(2) .footer__list,
+  .footer__grid > div:nth-child(3) .footer__list {
+    justify-items: center;
   }
 
   /* Get in touch (4th) spans full width */
