@@ -12,7 +12,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./shifthub.db"
 
     # Comma-separated list of origins allowed to call the API.
-    # In dev, defaults to "*". In prod, set to your Vercel URL.
+    # In dev, defaults to "*". In prod, set to your Vercel URL(s).
+    # Examples:
+    #   "*"
+    #   "https://shifthub.vercel.app"
+    #   "https://shifthub.vercel.app,https://shifthub-git-main-user.vercel.app"
     CORS_ORIGINS: str = "*"
 
     # ---- Gemini (primary) ----
@@ -40,9 +44,19 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        if self.CORS_ORIGINS.strip() == "*":
+        """
+        Parse the comma-separated CORS_ORIGINS into a list.
+        Trailing slashes are stripped, and empty entries are ignored.
+        """
+        raw = (self.CORS_ORIGINS or "").strip()
+        if not raw or raw == "*":
             return ["*"]
-        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        out = []
+        for o in raw.split(","):
+            o = o.strip().rstrip("/")   # ← strip trailing slash
+            if o:
+                out.append(o)
+        return out
 
     class Config:
         env_file = ".env"

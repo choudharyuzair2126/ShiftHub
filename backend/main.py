@@ -13,13 +13,28 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.APP_NAME)
 
-# CORS — allow the deployed frontend to call this API.
+# ---------------------------------------------------------------------------
+# CORS configuration
+# ---------------------------------------------------------------------------
+# The frontend (Vercel) and backend (Render) live on different origins, so
+# every browser request triggers a CORS preflight. We allow the configured
+# origins, or "*" if unset.
+#
+# IMPORTANT: allow_credentials MUST be False when allow_origins is ["*"] —
+# browsers reject that combination per the CORS spec. Since ShiftHub uses
+# JWT Bearer tokens (not cookies), credentials are not needed.
+# ---------------------------------------------------------------------------
+origins = settings.cors_origins_list
+print(f"🌐 CORS allowed origins: {origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=False,   # ← Bearer tokens, not cookies
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # API routes
@@ -36,6 +51,7 @@ def root():
         "app": settings.APP_NAME,
         "status": "ok",
         "environment": settings.APP_ENV,
+        "cors_origins": origins,
     }
 
 
