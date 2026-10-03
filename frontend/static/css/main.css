@@ -221,7 +221,7 @@ img { max-width: 100%; display: block; }
   .footer__grid {
     grid-template-columns: 1fr 1fr;   /* 2 columns for Products + Company */
     gap: 1.5rem 1rem;
-    text-align: left;
+    text-align: center;
   }
 
   /* Brand block (first child) spans the full row */
