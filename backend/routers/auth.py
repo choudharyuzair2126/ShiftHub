@@ -15,7 +15,10 @@ settings = get_settings()
 
 
 def _send_verification(user: User) -> None:
-    """Generate a fresh token and email the verification link."""
+    """
+    Regenerate the verification token and email the link.
+    IMPORTANT: The caller MUST call db.commit() after this function.
+    """
     user.verify_token = new_token()
     link = f"{settings.APP_BASE_URL}/#/verify?token={user.verify_token}"
     send_email(
@@ -31,19 +34,25 @@ def register(data: UserRegister, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == data.email.lower()).first():
         raise HTTPException(400, "Email already registered")
 
+    # Create user WITHOUT a verification token — the token will be set below.
     u = User(
         email=data.email.lower(),
         password_hash=hash_password(data.password),
         full_name=data.full_name,
         role=data.role if data.role in ("student", "employer") else "student",
         city=data.city or "",
-        verify_token=new_token(),
+        verify_token="",       # ← empty for now
     )
     db.add(u)
     db.commit()
     db.refresh(u)
 
+    # Generate the token, store it in memory, then COMMIT so the DB matches
+    # what's inside the email.
     _send_verification(u)
+    db.commit()                # ← THE FIX: persist the new token
+    db.refresh(u)
+
     return Token(access_token=create_token(u.id), user=UserOut.model_validate(u))
 
 
@@ -61,7 +70,7 @@ def verify(token: str, db: Session = Depends(get_db)):
     if not u:
         raise HTTPException(400, "Invalid or expired verification link")
     u.is_verified = True
-    u.verify_token = ""
+    u.verify_token = ""          # invalidate after use
     db.commit()
     return {"ok": True, "message": "Email verified successfully"}
 
@@ -75,7 +84,7 @@ def resend_verification(
     if user.is_verified:
         return {"ok": True, "message": "Email already verified"}
     _send_verification(user)
-    db.commit()
+    db.commit()                  # already correct here
     return {"ok": True, "message": "Verification email sent"}
 
 
