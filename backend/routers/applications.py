@@ -1,6 +1,6 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
 from ..models import Application, Job, User
@@ -37,7 +37,24 @@ def _enrich(a: Application) -> ApplicationOut:
         out.student_availability = student.availability
         out.student_resume_path = student.resume_path
 
+    # ---- Debug: log what we returned ----
+    print(
+        f"📄 enrich app_id={a.id} student_id={a.student_id} "
+        f"student_name={out.student_name!r} resume={bool(out.student_resume_path)}"
+    )
+
     return out
+
+
+def _base_query(db: Session):
+    """
+    Base query that eager-loads Job, Employer, and Student.
+    joinedload prevents lazy-loading surprises.
+    """
+    return db.query(Application).options(
+        joinedload(Application.job).joinedload(Job.employer),
+        joinedload(Application.student),
+    )
 
 
 @router.post("/job/{job_id}", response_model=ApplicationOut)
@@ -68,6 +85,9 @@ def apply(
     db.add(a)
     db.commit()
     db.refresh(a)
+
+    # Reload with eager loading so the response includes everything
+    a = _base_query(db).filter(Application.id == a.id).first()
     return _enrich(a)
 
 
@@ -77,7 +97,7 @@ def my_apps(
     db: Session = Depends(get_db),
 ):
     rows = (
-        db.query(Application)
+        _base_query(db)
         .filter(Application.student_id == user.id)
         .order_by(Application.created_at.desc())
         .all()
@@ -94,8 +114,9 @@ def job_apps(
     j = db.get(Job, job_id)
     if not j or j.employer_id != user.id:
         raise HTTPException(404, "Not found")
+
     rows = (
-        db.query(Application)
+        _base_query(db)
         .filter(Application.job_id == job_id)
         .order_by(Application.match_score.desc(), Application.created_at.desc())
         .all()

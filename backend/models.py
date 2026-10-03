@@ -3,6 +3,7 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Floa
 from sqlalchemy.orm import relationship
 from .database import Base
 
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
@@ -26,6 +27,7 @@ class User(Base):
     jobs = relationship("Job", back_populates="employer", cascade="all,delete")
     applications = relationship("Application", back_populates="student", cascade="all,delete")
 
+
 class Job(Base):
     __tablename__ = "jobs"
     id = Column(Integer, primary_key=True)
@@ -44,6 +46,7 @@ class Job(Base):
 
     employer = relationship("User", back_populates="jobs")
     applications = relationship("Application", back_populates="job", cascade="all,delete")
+
 
 class Application(Base):
     __tablename__ = "applications"
