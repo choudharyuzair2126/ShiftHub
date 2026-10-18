@@ -8,7 +8,7 @@ export function openChatModal(appId, otherPersonName, jobTitle) {
   const root = document.getElementById("modal-root");
   root.innerHTML = `
     <div class="modal-backdrop" data-close>
-      <div class="modal" data-modal style="width:min(100%,560px);height:600px;display:flex;flex-direction:column;padding:0;overflow:hidden">
+      <div class="modal" data-modal style="width:min(100%,560px);height:600px;display:flex;flex-direction:column;padding:0;overflow:hidden;text-align:left;">
         
         <!-- Header -->
         <div style="padding:1rem;border-bottom:1px solid var(--c-border);display:flex;justify-content:space-between;align-items:center;background:var(--c-surface)">
@@ -96,11 +96,11 @@ async function fetchMessages(appId, isInitial = false) {
     container.innerHTML = msgs.map(m => {
       const isMe = m.sender_id === session.user.id;
       return `
-        <div style="align-self: ${isMe ? "flex-end" : "flex-start"};max-width:85%">
-          <div style="font-size:.7rem;color:var(--c-text-muted);margin-bottom:.2rem;text-align:${isMe ? "right" : "left"}">
+        <div style="display:flex; flex-direction:column; align-items:${isMe ? "flex-end" : "flex-start"}; max-width:85%">
+          <div style="font-size:.7rem;color:var(--c-text-muted);margin-bottom:.2rem;text-align:${isMe ? "right" : "left"};width:100%">
             ${isMe ? "You" : escape(m.sender_name)} · ${new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
           </div>
-          <div style="background:${isMe ? "var(--brand-600)" : "var(--c-surface)"};color:${isMe ? "#fff" : "var(--c-text)"};padding:.6rem .85rem;border-radius:var(--radius-md);border-bottom-${isMe ? "right" : "left"}-radius:4px;border:1px solid ${isMe ? "transparent" : "var(--c-border)"};white-space:pre-wrap;word-break:break-word">
+          <div style="background:${isMe ? "var(--brand-600)" : "var(--c-surface)"};color:${isMe ? "#fff" : "var(--c-text)"};padding:.6rem .85rem;border-radius:var(--radius-md);border-bottom-${isMe ? "right" : "left"}-radius:4px;border:1px solid ${isMe ? "transparent" : "var(--c-border)"};white-space:pre-wrap;word-break:break-word;text-align:left;">
             ${escape(m.content)}
           </div>
         </div>`;
