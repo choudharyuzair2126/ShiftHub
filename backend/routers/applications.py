@@ -14,6 +14,8 @@ router = APIRouter(prefix="/api/applications", tags=["applications"])
 def _enrich(a: Application, db: Session) -> ApplicationOut:
     out = ApplicationOut.model_validate(a)
     job = db.get(Job, a.job_id)
+    student = db.get(User, a.student_id)
+
     if job:
         out.job_title = job.title
         out.job_city = job.city
@@ -23,7 +25,6 @@ def _enrich(a: Application, db: Session) -> ApplicationOut:
             out.employer_name = employer.full_name
             out.company_name = employer.company_name
 
-    student = db.get(User, a.student_id)
     if student:
         out.student_name = student.full_name
         out.student_email = student.email
@@ -33,6 +34,17 @@ def _enrich(a: Application, db: Session) -> ApplicationOut:
         out.student_skills = list(student.skills or [])
         out.student_availability = student.availability
         out.student_resume_path = student.resume_path
+
+    # DYNAMIC SCORE UPDATE:
+    # Recalculate on the fly so it always reflects the latest profile
+    if job and student:
+        new_score = match_score(student, job)
+        if a.match_score != new_score:
+            a.match_score = new_score
+            db.add(a)
+            db.commit()  # Save the new score
+        out.match_score = new_score
+
     return out
 
 
@@ -59,7 +71,6 @@ def apply(job_id: int, data: ApplicationCreate, user: User = Depends(require_rol
     db.commit()
     db.refresh(a)
 
-    # Notify Employer
     notif = Notification(
         user_id=j.employer_id,
         title="New Application",
@@ -100,7 +111,6 @@ def update_status(app_id: int, status: str, user: User = Depends(require_role("e
     a.status = status
     db.commit()
 
-    # Notify Student
     notif = Notification(
         user_id=a.student_id,
         title="Application Update",
