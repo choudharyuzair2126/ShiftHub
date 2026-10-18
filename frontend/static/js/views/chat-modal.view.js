@@ -96,12 +96,12 @@ async function fetchMessages(appId, isInitial = false) {
     container.innerHTML = msgs.map(m => {
       const isMe = m.sender_id === session.user.id;
       return `
-        <div style="display:flex; flex-direction:column; align-items:${isMe ? "flex-end" : "flex-start"}; max-width:85%">
-          <div style="font-size:.7rem;color:var(--c-text-muted);margin-bottom:.2rem;text-align:${isMe ? "right" : "left"};width:100%">
+        <div style="display:flex; flex-direction:column; align-items:${isMe ? "flex-end" : "flex-start"}; width: 100%; margin-bottom: 0.5rem;">
+          <div style="font-size:.7rem;color:var(--c-text-muted);margin-bottom:.2rem;width:100%;text-align:${isMe ? "right" : "left"};">
             ${isMe ? "You" : escape(m.sender_name)} · ${new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
           </div>
-          <div style="background:${isMe ? "var(--brand-600)" : "var(--c-surface)"};color:${isMe ? "#fff" : "var(--c-text)"};padding:.6rem .85rem;border-radius:var(--radius-md);border-bottom-${isMe ? "right" : "left"}-radius:4px;border:1px solid ${isMe ? "transparent" : "var(--c-border)"};white-space:pre-wrap;word-break:break-word;text-align:left;">
-            ${escape(m.content)}
+          <div style="background:${isMe ? "var(--brand-600)" : "var(--c-surface)"};color:${isMe ? "#fff" : "var(--c-text)"};padding:.6rem .85rem;border-radius:var(--radius-md);border-bottom-${isMe ? "right" : "left"}-radius:4px;border:1px solid ${isMe ? "transparent" : "var(--c-border)"};max-width:85%;box-sizing:border-box;">
+            <div style="text-align: left !important; white-space: pre-wrap; word-break: break-word;">${escape(m.content)}</div>
           </div>
         </div>`;
     }).join("");
