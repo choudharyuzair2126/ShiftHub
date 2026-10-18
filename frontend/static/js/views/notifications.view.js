@@ -16,7 +16,7 @@ export function renderNotificationBell(unreadCount) {
       
       <div id="notif-panel" class="hidden" style="position:absolute;top:100%;right:0;width:320px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);z-index:1000;margin-top:.5rem;overflow:hidden">
         <div style="padding:.75rem 1rem;border-bottom:1px solid var(--c-border);display:flex;justify-content:space-between;align-items:center;background:var(--c-bg-soft)">
-          <b style="font-size:.9rem">Notifications</b>
+          <b style="font-size:.9rem;color:var(--c-text)">Notifications</b>
           <button class="text-xs text-muted" id="mark-read-btn" style="background:none;border:none;cursor:pointer;text-decoration:underline">Mark all read</button>
         </div>
         <div id="notif-list" style="max-height:300px;overflow-y:auto;padding:.5rem">
@@ -48,7 +48,7 @@ export function bindNotificationEvents() {
           list.innerHTML = `<div class="text-center text-muted text-sm" style="padding:1rem">No notifications yet.</div>`;
         } else {
           list.innerHTML = notifs.map(n => `
-            <div style="padding:.75rem;border-bottom:1px solid var(--c-border);font-size:.85rem;background:${n.is_read ? 'transparent' : 'var(--brand-50)'}">
+            <div style="padding:.75rem;border-bottom:1px solid var(--c-border);font-size:.85rem;background:${n.is_read ? 'transparent' : 'rgba(99, 102, 241, 0.15)'}; border-radius:6px; margin-bottom:4px;">
               <div style="font-weight:600;color:var(--c-text)">${escape(n.title)}</div>
               <div style="color:var(--c-text-soft);margin-top:.2rem">${escape(n.content)}</div>
               <div style="font-size:.7rem;color:var(--c-text-muted);margin-top:.35rem">${new Date(n.created_at).toLocaleString()}</div>
@@ -69,7 +69,7 @@ export function bindNotificationEvents() {
   });
 
   document.addEventListener("click", (e) => {
-    if (!panel.contains(e.target) && e.target !== bell) {
+    if (!panel.contains(e.target) && !e.target.closest('#notif-bell')) {
       panel.classList.add("hidden");
     }
   });
