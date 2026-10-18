@@ -94,7 +94,7 @@ class ApplicationOut(BaseModel):
     status: str
     match_score: float
     created_at: datetime
-
+    
     job_title: Optional[str] = None
     job_city: Optional[str] = None
     job_pay: Optional[str] = None
@@ -109,9 +109,10 @@ class ApplicationOut(BaseModel):
     student_skills: Optional[List[str]] = None
     student_availability: Optional[str] = None
     student_resume_path: Optional[str] = None
-
     class Config:
         from_attributes = True
+
+
 class ChatRequest(BaseModel):
     message: str
     history: Optional[List[dict]] = []
@@ -124,3 +125,22 @@ class ForgotPassword(BaseModel):
 class ResetPassword(BaseModel):
     token: str
     new_password: str = Field(min_length=6)
+
+
+# ---- Chat Messages ----
+
+class MessageCreate(BaseModel):
+    content: str
+
+
+class MessageOut(BaseModel):
+    id: int
+    application_id: int
+    sender_id: int
+    content: str
+    is_read: bool
+    created_at: datetime
+    sender_name: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
