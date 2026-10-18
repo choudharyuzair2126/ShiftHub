@@ -3,6 +3,7 @@ import { authVM } from "../viewmodels/auth.vm.js";
 import { jobsVM } from "../viewmodels/jobs.vm.js";
 import { studentVM } from "../viewmodels/employer.vm.js";
 import { toast } from "../core/toast.js";
+import { openChatModal } from "./chat-modal.view.js";
 
 export async function studentDashboardView() {
   if (!session.user) return redirectLogin();
@@ -45,6 +46,7 @@ export async function studentDashboardView() {
                 <th>Match</th>
                 <th>Status</th>
                 <th>Applied</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -61,6 +63,9 @@ export async function studentDashboardView() {
                   <td><span class="badge badge--brand">${a.match_score}%</span></td>
                   <td><span class="badge ${a.statusBadge}">${a.status}</span></td>
                   <td>${new Date(a.created_at).toLocaleDateString()}</td>
+                  <td>
+                    <button class="btn btn--soft btn--sm" data-chat="${a.id}" data-name="${escape(a.company_name || a.employer_name)}" data-job="${escape(a.job_title)}">Message</button>
+                  </td>
                 </tr>`).join("")}
             </tbody>
           </table>
@@ -90,6 +95,15 @@ export async function studentDashboardView() {
 function bind() {
   const btn = document.querySelector("[data-profile]");
   if (btn) btn.addEventListener("click", openProfile);
+
+  document.querySelectorAll("[data-chat]").forEach(b => {
+    b.addEventListener("click", () => {
+      const appId = Number(b.dataset.chat);
+      const name = b.dataset.name;
+      const job = b.dataset.job;
+      openChatModal(appId, name, job);
+    });
+  });
 }
 
 function openProfile() {

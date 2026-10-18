@@ -2,6 +2,7 @@ import { session } from "../core/store.js";
 import { jobsVM } from "../viewmodels/jobs.vm.js";
 import { employerVM } from "../viewmodels/employer.vm.js";
 import { toast } from "../core/toast.js";
+import { openChatModal } from "./chat-modal.view.js";
 
 export async function employerDashboardView() {
   if (!session.user) return redirectLogin();
@@ -46,10 +47,6 @@ export async function employerDashboardView() {
   </section>`;
 }
 
-// ---------------------------------------------------------------------------
-// Bindings
-// ---------------------------------------------------------------------------
-
 function bind(jobs) {
   document.querySelector("[data-new-job]")?.addEventListener("click", openPostModal);
   document.querySelectorAll("[data-del-job]").forEach(b => b.addEventListener("click", async () => {
@@ -64,10 +61,6 @@ function bind(jobs) {
     b.addEventListener("click", () => openApplicants(Number(b.dataset.viewApps), jobs))
   );
 }
-
-// ---------------------------------------------------------------------------
-// Post a new job modal
-// ---------------------------------------------------------------------------
 
 function openPostModal() {
   const root = document.getElementById("modal-root");
@@ -122,16 +115,11 @@ function openPostModal() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Applicants modal
-// ---------------------------------------------------------------------------
-
 async function openApplicants(jobId, jobs) {
   const job = jobs.find(j => j.id === jobId);
   const apps = await employerVM.applicants(jobId);
   const root = document.getElementById("modal-root");
 
-  // Store apps on a WeakMap-free global so the inner modals can access them
   window.__sh_apps = apps;
 
   root.innerHTML = `
@@ -173,7 +161,10 @@ async function openApplicants(jobId, jobs) {
                       </select>
                     </td>
                     <td>
-                      <button class="btn btn--soft btn--sm" data-view-profile="${a.id}">View profile</button>
+                      <div class="flex gap-2">
+                        <button class="btn btn--soft btn--sm" data-view-profile="${a.id}">Profile</button>
+                        <button class="btn btn--ghost btn--sm" data-chat="${a.id}" data-name="${escape(a.student_name)}" data-job="${escape(job.title)}">Message</button>
+                      </div>
                     </td>
                   </tr>`).join("")}
               </tbody>
@@ -186,7 +177,6 @@ async function openApplicants(jobId, jobs) {
   root.querySelector("[data-modal]").addEventListener("click", e => e.stopPropagation());
   function close() { root.innerHTML = ""; }
 
-  // Status changes
   root.querySelectorAll("[data-status]").forEach(sel => {
     sel.addEventListener("change", async () => {
       try {
@@ -196,18 +186,24 @@ async function openApplicants(jobId, jobs) {
     });
   });
 
-  // View profile buttons
   root.querySelectorAll("[data-view-profile]").forEach(b => {
     b.addEventListener("click", () => {
       const a = window.__sh_apps.find(x => x.id === Number(b.dataset.viewProfile));
       if (a) openProfileModal(a);
     });
   });
-}
 
-// ---------------------------------------------------------------------------
-// Applicant profile modal
-// ---------------------------------------------------------------------------
+  root.querySelectorAll("[data-chat]").forEach(b => {
+    b.addEventListener("click", () => {
+      const appId = Number(b.dataset.chat);
+      const name = b.dataset.name;
+      const job = b.dataset.job;
+      // Close applicants modal first so chat modal is clean
+      close();
+      openChatModal(appId, name, job);
+    });
+  });
+}
 
 function openProfileModal(a) {
   const root = document.getElementById("modal-root");
@@ -224,7 +220,6 @@ function openProfileModal(a) {
           <button class="btn btn--icon btn--ghost" data-close>✕</button>
         </div>
 
-        <!-- Contact info -->
         <div class="grid grid--2" style="gap:.75rem">
           <div class="card" style="padding:1rem">
             <div class="stat__label">Email</div>
@@ -252,7 +247,6 @@ function openProfileModal(a) {
           </div>
         </div>
 
-        <!-- Skills -->
         ${a.student_skills && a.student_skills.length ? `
           <h4 class="mt-6 mb-2" style="font-size:.95rem">Skills</h4>
           <div class="chip-list">
@@ -260,19 +254,16 @@ function openProfileModal(a) {
           </div>
         ` : ""}
 
-        <!-- Bio -->
         ${a.student_bio ? `
           <h4 class="mt-6 mb-2" style="font-size:.95rem">About</h4>
           <p style="font-size:.9rem;white-space:pre-wrap;margin:0">${escape(a.student_bio)}</p>
         ` : ""}
 
-        <!-- Cover note -->
         ${a.cover_note ? `
           <h4 class="mt-6 mb-2" style="font-size:.95rem">Cover note</h4>
           <div style="background:var(--c-bg-soft);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:.85rem;font-size:.9rem;white-space:pre-wrap;color:var(--c-text-soft)">${escape(a.cover_note)}</div>
         ` : ""}
 
-        <!-- Resume / CV -->
         <h4 class="mt-6 mb-2" style="font-size:.95rem">Resume / CV</h4>
         ${a.student_resume_path
           ? `<a href="${escape(a.student_resume_path)}" target="_blank" rel="noopener" class="btn btn--primary" style="display:inline-flex">📄 Open Resume</a>
@@ -289,10 +280,6 @@ function openProfileModal(a) {
   root.querySelector("[data-modal]").addEventListener("click", e => e.stopPropagation());
   function close() { root.innerHTML = ""; }
 }
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
 
 function redirectLogin() {
   setTimeout(() => { window.location.hash = "#/login"; }, 0);
