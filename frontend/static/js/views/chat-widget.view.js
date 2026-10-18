@@ -1,69 +1,132 @@
-import { chatVM } from "../viewmodels/chat.vm.js";
+import { api } from "../core/api.js";
+import { session } from "../core/store.js";
+import { toast } from "../core/toast.js";
 
-export function renderChatWidget() {
-  const { open, loading, history } = chatVM;
-  return `
-    ${open ? `
-      <div class="chat-panel">
-        <div class="chat-panel__head">
-          <div style="display:flex;align-items:center;gap:.6rem">
-            <div class="brand__mark" style="width:28px;height:28px;font-size:.75rem">AI</div>
-            <div>
-              <div style="font-weight:700;font-family:var(--font-display);font-size:.95rem">ShiftHub Assistant</div>
-              <div style="font-size:.72rem;opacity:.85">Powered by AI</div>
-            </div>
+let pollInterval = null;
+
+export function openChatModal(appId, otherPersonName, jobTitle) {
+  const root = document.getElementById("modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" data-close>
+      <div class="modal" data-modal style="width:min(100%,560px);height:600px;display:flex;flex-direction:column;padding:0;overflow:hidden">
+        
+        <!-- Header -->
+        <div style="padding:1rem;border-bottom:1px solid var(--c-border);display:flex;justify-content:space-between;align-items:center;background:var(--c-surface)">
+          <div>
+            <h3 style="margin:0;font-size:1.1rem">${escape(otherPersonName)}</h3>
+            <div class="text-xs text-muted">Re: ${escape(jobTitle)}</div>
           </div>
-          <button class="btn btn--icon" data-chat-close style="background:rgba(255,255,255,.15);color:#fff">✕</button>
+          <button class="btn btn--icon btn--ghost" data-close>✕</button>
         </div>
-        <div class="chat-panel__body" id="chat-body">
-          ${history.map(h => `
-            <div class="chat-bubble chat-bubble--${h.role === "user" ? "user" : "ai"}">${escapeHtml(h.content)}</div>
-          `).join("")}
-          ${loading ? `<div class="chat-bubble chat-bubble--ai">Typing…</div>` : ""}
+
+        <!-- Message Area -->
+        <div id="chat-messages" style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.75rem;background:var(--c-bg-soft)">
+          <div class="text-center text-muted text-sm mt-4">Loading…</div>
         </div>
-        <form class="chat-panel__input" data-chat-form>
-          <input class="input" placeholder="Ask about jobs…" data-chat-input autocomplete="off" />
-          <button class="btn btn--primary" type="submit" ${loading ? "disabled" : ""}>Send</button>
+
+        <!-- Input Area -->
+        <form id="chat-form" style="padding:1rem;border-top:1px solid var(--c-border);display:flex;gap:.5rem;background:var(--c-surface)">
+          <input class="input" id="chat-input" placeholder="Type a message…" autocomplete="off" required />
+          <button class="btn btn--primary" type="submit" id="chat-send-btn">Send</button>
         </form>
+
       </div>
-    ` : `
-      <button class="chat-fab" data-chat-open aria-label="Open chat">💬</button>
-    `}
-  `;
+    </div>`;
+
+  root.querySelectorAll("[data-close]").forEach(el => el.addEventListener("click", closeChatModal));
+  root.querySelector("[data-modal]").addEventListener("click", e => e.stopPropagation());
+
+  // Load initial messages
+  fetchMessages(appId, true);
+  markRead(appId);
+
+  // Start polling every 3 seconds
+  pollInterval = setInterval(() => {
+    fetchMessages(appId, false);
+    markRead(appId);
+  }, 3000);
+
+  // Handle Send
+  const form = document.getElementById("chat-form");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("chat-input");
+    const btn = document.getElementById("chat-send-btn");
+    const content = input.value.trim();
+    if (!content) return;
+
+    input.value = "";
+    btn.disabled = true;
+    
+    try {
+      await api.post(`/api/messages/application/${appId}`, { content });
+      await fetchMessages(appId, false); // Fetch immediately after send
+    } catch (err) {
+      toast.error("Failed to send message");
+      input.value = content; // restore
+    } finally {
+      btn.disabled = false;
+      input.focus();
+    }
+  });
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({
+function closeChatModal() {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+  document.getElementById("modal-root").innerHTML = "";
+}
+
+async function fetchMessages(appId, isInitial = false) {
+  try {
+    const msgs = await api.get(`/api/messages/application/${appId}`);
+    const container = document.getElementById("chat-messages");
+    if (!container) return; // Modal closed while fetching
+
+    if (isInitial && msgs.length === 0) {
+      container.innerHTML = `<div class="text-center text-muted text-sm" style="margin-top:2rem">No messages yet. Say hello!</div>`;
+      return;
+    }
+
+    // Check if we are already at the bottom (to auto-scroll)
+    const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+
+    container.innerHTML = msgs.map(m => {
+      const isMe = m.sender_id === session.user.id;
+      return `
+        <div style="align-self: ${isMe ? "flex-end" : "flex-start"};max-width:85%;display:flex;flex-direction:column;align-items:${isMe ? "flex-end" : "flex-start"}">
+          
+          <!-- Sender Name & Time -->
+          <div style="font-size:.7rem;color:var(--c-text-muted);margin-bottom:.2rem;text-align:${isMe ? "right" : "left"}">
+            ${isMe ? "You" : escape(m.sender_name)} · ${new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+          </div>
+          
+          <!-- Message Bubble -->
+          <div style="text-align: left; background:${isMe ? "var(--brand-600)" : "var(--c-surface)"};color:${isMe ? "#fff" : "var(--c-text)"};padding:.6rem .85rem;border-radius:var(--radius-md);border-bottom-${isMe ? "right" : "left"}-radius:4px;border:1px solid ${isMe ? "transparent" : "var(--c-border)"};white-space:pre-wrap;word-break:break-word;width:100%">
+            ${escape(m.content)}
+          </div>
+          
+        </div>`;
+    }).join("");
+
+    if (isInitial || isAtBottom) {
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch (err) {
+    console.error("Chat fetch error:", err);
+  }
+}
+
+async function markRead(appId) {
+  try {
+    await api.post(`/api/messages/application/${appId}/read`);
+  } catch {}
+}
+
+function escape(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
-}
-
-export function bindChatWidget(root) {
-  // FAB — open via VM method so refresh fires
-  const open = root.querySelector("[data-chat-open]");
-  if (open) open.addEventListener("click", () => { chatVM.toggle(); });
-
-  // Close button — also via VM
-  const close = root.querySelector("[data-chat-close]");
-  if (close) close.addEventListener("click", () => { chatVM.close(); });
-
-  // Send form
-  const form = root.querySelector("[data-chat-form]");
-  if (form) {
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      await chatVM.send();
-    });
-  }
-
-  // Input — free typing updates draft WITHOUT triggering a refresh
-  const input = root.querySelector("[data-chat-input]");
-  if (input) {
-    input.addEventListener("input", e => { chatVM.draft = e.target.value; });
-    input.focus();
-  }
-
-  // Auto-scroll to newest message
-  const body = root.querySelector("#chat-body");
-  if (body) body.scrollTop = body.scrollHeight;
 }
