@@ -27,6 +27,7 @@ class User(Base):
     jobs = relationship("Job", back_populates="employer", cascade="all,delete")
     applications = relationship("Application", back_populates="student", cascade="all,delete")
     sent_messages = relationship("Message", back_populates="sender", cascade="all,delete")
+    notifications = relationship("Notification", back_populates="user", cascade="all,delete")
 
 
 class Job(Base):
@@ -75,3 +76,15 @@ class Message(Base):
 
     application = relationship("Application", back_populates="messages")
     sender = relationship("User", back_populates="sent_messages")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(150), nullable=False)
+    content = Column(Text, nullable=False)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="notifications")

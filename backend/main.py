@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import Base, engine
-from .routers import auth, users, jobs, applications, ai, messages
+from .routers import auth, users, jobs, applications, ai, messages, notifications
 
 settings = get_settings()
 Base.metadata.create_all(bind=engine)
@@ -27,6 +27,7 @@ app.include_router(jobs.router)
 app.include_router(applications.router)
 app.include_router(ai.router)
 app.include_router(messages.router)
+app.include_router(notifications.router)
 
 
 @app.get("/")

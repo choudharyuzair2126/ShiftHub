@@ -127,8 +127,6 @@ class ResetPassword(BaseModel):
     new_password: str = Field(min_length=6)
 
 
-# ---- Chat Messages ----
-
 class MessageCreate(BaseModel):
     content: str
 
@@ -142,5 +140,15 @@ class MessageOut(BaseModel):
     created_at: datetime
     sender_name: Optional[str] = None
     
+    class Config:
+        from_attributes = True
+
+
+class NotificationOut(BaseModel):
+    id: int
+    title: str
+    content: str
+    is_read: bool
+    created_at: datetime
     class Config:
         from_attributes = True
