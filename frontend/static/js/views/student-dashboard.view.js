@@ -64,7 +64,6 @@ export async function studentDashboardView() {
                   <td><span class="badge ${a.statusBadge}">${a.status}</span></td>
                   <td>${new Date(a.created_at).toLocaleDateString()}</td>
                   <td style="text-align:right">
-                    <!-- THIS IS THE MESSAGE BUTTON -->
                     <button class="btn btn--primary btn--sm" data-chat="${a.id}" data-name="${escape(a.company_name || a.employer_name)}" data-job="${escape(a.job_title)}">
                       💬 Message
                     </button>
