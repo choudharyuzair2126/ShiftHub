@@ -12,7 +12,7 @@ import { jobDetailView } from "./views/job-detail.view.js";
 import { studentDashboardView } from "./views/student-dashboard.view.js";
 import { employerDashboardView } from "./views/employer-dashboard.view.js";
 import { renderChatWidget, bindChatWidget } from "./views/chat-widget.view.js";
-import { renderNotificationBell, bindNotificationEvents } from "./views/notifications.view.js"; // <-- Import
+import { renderNotificationBell, bindNotificationEvents } from "./views/notifications.view.js";
 
 const router = new Router();
 let unreadNotifCount = 0;
@@ -30,9 +30,12 @@ const routes = {
   "/verify-pending": verifyPendingView,
   "/jobs": jobsView,
   "/jobs/:id": jobDetailView,
-  "/dashboard": async () => {
+  "/dashboard": async (ctx) => {
     if (!session.user) { window.location.hash = "#/login"; return ""; }
-    return session.user.role === "employer" ? await employerDashboardView() : await studentDashboardView();
+    // PASS ctx TO DASHBOARD VIEWS
+    return session.user.role === "employer" 
+      ? await employerDashboardView(ctx) 
+      : await studentDashboardView(ctx);
   },
   "/verify": async (ctx) => {
     try {
@@ -54,14 +57,12 @@ function refreshChat() {
 }
 setChatRefresh(refreshChat);
 
-// --- NOTIFICATION LOGIC ---
 async function pollNotifications() {
   if (!session.user) return;
   try {
     const notifs = await api.get("/api/notifications");
     const unread = notifs.filter(n => !n.is_read).length;
     
-    // If count changed, re-render the bell
     if (unread !== unreadNotifCount) {
       unreadNotifCount = unread;
       const bellMount = document.getElementById("notif-bell-root");
@@ -74,7 +75,7 @@ async function pollNotifications() {
 }
 
 window.addEventListener("refresh-notifications", () => {
-  unreadNotifCount = -1; // force refresh
+  unreadNotifCount = -1; 
   pollNotifications();
 });
 
@@ -93,7 +94,6 @@ function navHTML() {
       <div class="nav__actions">
         <button class="btn btn--icon btn--ghost" data-theme-toggle title="Toggle theme">🌙</button>
         
-        <!-- Notification Bell -->
         <div id="notif-bell-root">${renderNotificationBell(unreadNotifCount)}</div>
 
         ${u ? `
@@ -235,10 +235,9 @@ async function boot() {
     await render();
   }
 
-  // Start Notification Polling
   if (session.user) {
     pollNotifications();
-    notifPollInterval = setInterval(pollNotifications, 10000); // 10 seconds
+    notifPollInterval = setInterval(pollNotifications, 10000);
   }
 
   window.addEventListener("hashchange", render);

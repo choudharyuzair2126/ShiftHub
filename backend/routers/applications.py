@@ -46,17 +46,6 @@ def _enrich(a: Application, db: Session) -> ApplicationOut:
     return out
 
 
-@router.get("/{app_id}", response_model=ApplicationOut)
-def get_app(app_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    a = db.get(Application, app_id)
-    if not a:
-        raise HTTPException(404, "Not found")
-    j = db.get(Job, a.job_id)
-    if user.id != a.student_id and user.id != j.employer_id:
-        raise HTTPException(403, "Not authorized")
-    return _enrich(a, db)
-
-
 @router.post("/job/{job_id}", response_model=ApplicationOut)
 def apply(job_id: int, data: ApplicationCreate, user: User = Depends(require_role("student")), db: Session = Depends(get_db)):
     if not user.is_verified:
@@ -80,7 +69,7 @@ def apply(job_id: int, data: ApplicationCreate, user: User = Depends(require_rol
 
     notif = Notification(
         user_id=j.employer_id,
-        application_id=a.id, # <-- Link Notification to App
+        application_id=a.id,
         title="New Application",
         content=f"{user.full_name} applied for your job '{j.title}'.",
     )
@@ -118,7 +107,7 @@ def update_status(app_id: int, status: str, user: User = Depends(require_role("e
 
     notif = Notification(
         user_id=a.student_id,
-        application_id=a.id, # <-- Link Notification to App
+        application_id=a.id,
         title="Application Update",
         content=f"Your application for '{j.title}' is now {status.upper()}.",
     )
@@ -126,3 +115,15 @@ def update_status(app_id: int, status: str, user: User = Depends(require_role("e
     db.commit()
 
     return {"ok": True}
+
+
+# IMPORTANT: This dynamic route MUST be at the bottom so it doesn't intercept /mine or /job/...
+@router.get("/{app_id}", response_model=ApplicationOut)
+def get_app(app_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    a = db.get(Application, app_id)
+    if not a:
+        raise HTTPException(404, "Not found")
+    j = db.get(Job, a.job_id)
+    if user.id != a.student_id and user.id != j.employer_id:
+        raise HTTPException(403, "Not authorized")
+    return _enrich(a, db)
