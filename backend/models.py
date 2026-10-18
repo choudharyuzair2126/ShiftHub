@@ -82,6 +82,7 @@ class Notification(Base):
     __tablename__ = "notifications"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=True)  # NEW
     title = Column(String(150), nullable=False)
     content = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)

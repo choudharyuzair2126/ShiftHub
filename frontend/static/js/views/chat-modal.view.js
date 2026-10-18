@@ -4,27 +4,45 @@ import { toast } from "../core/toast.js";
 
 let pollInterval = null;
 
-export function openChatModal(appId, otherPersonName, jobTitle) {
+export async function openChatModal(appId, otherPersonName = null, jobTitle = null) {
   const root = document.getElementById("modal-root");
+  
+  // Show loading state immediately
+  root.innerHTML = `
+    <div class="modal-backdrop" data-close>
+      <div class="modal" data-modal style="width:min(100%,560px);height:600px;display:flex;align-items:center;justify-content:center;background:var(--c-surface)">
+        <div class="text-muted">Loading chat…</div>
+      </div>
+    </div>`;
+    
+  if (!otherPersonName || !jobTitle) {
+     try {
+        const appData = await api.get(`/api/applications/${appId}`);
+        const isMeStudent = session.user.role === 'student';
+        otherPersonName = isMeStudent ? (appData.company_name || appData.employer_name) : appData.student_name;
+        jobTitle = appData.job_title;
+     } catch(e) {
+        otherPersonName = "Chat";
+        jobTitle = "Job Application";
+     }
+  }
+
   root.innerHTML = `
     <div class="modal-backdrop" data-close>
       <div class="modal" data-modal style="width:min(100%,560px);height:600px;display:flex;flex-direction:column;padding:0;overflow:hidden;text-align:left;">
         
-        <!-- Header -->
         <div style="padding:1rem;border-bottom:1px solid var(--c-border);display:flex;justify-content:space-between;align-items:center;background:var(--c-surface)">
           <div>
-            <h3 style="margin:0;font-size:1.1rem">${escape(otherPersonName)}</h3>
-            <div class="text-xs text-muted">Re: ${escape(jobTitle)}</div>
+            <h3 style="margin:0;font-size:1.1rem">${escape(otherPersonName || "Chat")}</h3>
+            <div class="text-xs text-muted">Re: ${escape(jobTitle || "Job")}</div>
           </div>
           <button class="btn btn--icon btn--ghost" data-close>✕</button>
         </div>
 
-        <!-- Message Area -->
         <div id="chat-messages" style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.75rem;background:var(--c-bg-soft)">
           <div class="text-center text-muted text-sm mt-4">Loading…</div>
         </div>
 
-        <!-- Input Area -->
         <form id="chat-form" style="padding:1rem;border-top:1px solid var(--c-border);display:flex;gap:.5rem;background:var(--c-surface)">
           <input class="input" id="chat-input" placeholder="Type a message…" autocomplete="off" required />
           <button class="btn btn--primary" type="submit" id="chat-send-btn">Send</button>
@@ -36,17 +54,14 @@ export function openChatModal(appId, otherPersonName, jobTitle) {
   root.querySelectorAll("[data-close]").forEach(el => el.addEventListener("click", closeChatModal));
   root.querySelector("[data-modal]").addEventListener("click", e => e.stopPropagation());
 
-  // Load initial messages
   fetchMessages(appId, true);
   markRead(appId);
 
-  // Start polling every 3 seconds
   pollInterval = setInterval(() => {
     fetchMessages(appId, false);
     markRead(appId);
   }, 3000);
 
-  // Handle Send
   const form = document.getElementById("chat-form");
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -60,10 +75,10 @@ export function openChatModal(appId, otherPersonName, jobTitle) {
     
     try {
       await api.post(`/api/messages/application/${appId}`, { content });
-      await fetchMessages(appId, false); // Fetch immediately after send
+      await fetchMessages(appId, false);
     } catch (err) {
       toast.error("Failed to send message");
-      input.value = content; // restore
+      input.value = content;
     } finally {
       btn.disabled = false;
       input.focus();
@@ -83,14 +98,13 @@ async function fetchMessages(appId, isInitial = false) {
   try {
     const msgs = await api.get(`/api/messages/application/${appId}`);
     const container = document.getElementById("chat-messages");
-    if (!container) return; // Modal closed while fetching
+    if (!container) return;
 
     if (isInitial && msgs.length === 0) {
       container.innerHTML = `<div class="text-center text-muted text-sm" style="margin-top:2rem">No messages yet. Say hello!</div>`;
       return;
     }
 
-    // Check if we are already at the bottom (to auto-scroll)
     const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
 
     container.innerHTML = msgs.map(m => {
@@ -115,9 +129,7 @@ async function fetchMessages(appId, isInitial = false) {
 }
 
 async function markRead(appId) {
-  try {
-    await api.post(`/api/messages/application/${appId}/read`);
-  } catch {}
+  try { await api.post(`/api/messages/application/${appId}/read`); } catch {}
 }
 
 function escape(s) {

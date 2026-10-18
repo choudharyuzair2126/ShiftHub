@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field
 
-
 class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
@@ -10,11 +9,9 @@ class UserRegister(BaseModel):
     role: str = "student"
     city: Optional[str] = ""
 
-
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-
 
 class UserOut(BaseModel):
     id: int
@@ -33,7 +30,6 @@ class UserOut(BaseModel):
     class Config:
         from_attributes = True
 
-
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     city: Optional[str] = None
@@ -43,12 +39,10 @@ class UserUpdate(BaseModel):
     availability: Optional[str] = None
     company_name: Optional[str] = None
 
-
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
-
 
 class JobCreate(BaseModel):
     title: str
@@ -60,7 +54,6 @@ class JobCreate(BaseModel):
     job_type: Optional[str] = "Part-time"
     required_skills: Optional[List[str]] = []
     shift: Optional[str] = ""
-
 
 class JobOut(BaseModel):
     id: int
@@ -81,10 +74,8 @@ class JobOut(BaseModel):
     class Config:
         from_attributes = True
 
-
 class ApplicationCreate(BaseModel):
     cover_note: Optional[str] = ""
-
 
 class ApplicationOut(BaseModel):
     id: int
@@ -112,24 +103,19 @@ class ApplicationOut(BaseModel):
     class Config:
         from_attributes = True
 
-
 class ChatRequest(BaseModel):
     message: str
     history: Optional[List[dict]] = []
 
-
 class ForgotPassword(BaseModel):
     email: EmailStr
-
 
 class ResetPassword(BaseModel):
     token: str
     new_password: str = Field(min_length=6)
 
-
 class MessageCreate(BaseModel):
     content: str
-
 
 class MessageOut(BaseModel):
     id: int
@@ -139,13 +125,12 @@ class MessageOut(BaseModel):
     is_read: bool
     created_at: datetime
     sender_name: Optional[str] = None
-    
     class Config:
         from_attributes = True
 
-
 class NotificationOut(BaseModel):
     id: int
+    application_id: Optional[int] = None
     title: str
     content: str
     is_read: bool

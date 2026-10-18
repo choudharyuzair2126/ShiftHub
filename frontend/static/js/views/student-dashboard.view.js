@@ -5,7 +5,7 @@ import { studentVM } from "../viewmodels/employer.vm.js";
 import { toast } from "../core/toast.js";
 import { openChatModal } from "./chat-modal.view.js";
 
-export async function studentDashboardView() {
+export async function studentDashboardView(ctx) {
   if (!session.user) return redirectLogin();
 
   const [recs, apps] = await Promise.all([
@@ -13,7 +13,19 @@ export async function studentDashboardView() {
     studentVM.myApplications().catch(() => []),
   ]);
 
-  setTimeout(() => bind(), 0);
+  setTimeout(() => {
+    bind();
+    // AUTO-OPEN CHAT IF URL HAS ?chat=123
+    if (ctx && ctx.params && ctx.params.chat) {
+      const appId = Number(ctx.params.chat);
+      const app = apps.find(a => a.id === appId);
+      if (app) {
+        openChatModal(appId, app.company_name || app.employer_name, app.job_title);
+        // Clean the URL so it doesn't reopen on refresh
+        window.history.replaceState(null, null, window.location.pathname + "#/dashboard");
+      }
+    }
+  }, 0);
 
   return `
   <section class="section">
@@ -100,10 +112,7 @@ function bind() {
 
   document.querySelectorAll("[data-chat]").forEach(b => {
     b.addEventListener("click", () => {
-      const appId = Number(b.dataset.chat);
-      const name = b.dataset.name;
-      const job = b.dataset.job;
-      openChatModal(appId, name, job);
+      openChatModal(Number(b.dataset.chat), b.dataset.name, b.dataset.job);
     });
   });
 }

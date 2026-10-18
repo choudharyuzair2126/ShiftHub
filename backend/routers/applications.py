@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Application, Job, User, Notification
 from ..schemas import ApplicationCreate, ApplicationOut
-from ..deps import require_role
+from ..deps import require_role, get_current_user
 from ..services.matching_service import match_score
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
@@ -35,17 +35,26 @@ def _enrich(a: Application, db: Session) -> ApplicationOut:
         out.student_availability = student.availability
         out.student_resume_path = student.resume_path
 
-    # DYNAMIC SCORE UPDATE:
-    # Recalculate on the fly so it always reflects the latest profile
     if job and student:
         new_score = match_score(student, job)
         if a.match_score != new_score:
             a.match_score = new_score
             db.add(a)
-            db.commit()  # Save the new score
+            db.commit()
         out.match_score = new_score
 
     return out
+
+
+@router.get("/{app_id}", response_model=ApplicationOut)
+def get_app(app_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    a = db.get(Application, app_id)
+    if not a:
+        raise HTTPException(404, "Not found")
+    j = db.get(Job, a.job_id)
+    if user.id != a.student_id and user.id != j.employer_id:
+        raise HTTPException(403, "Not authorized")
+    return _enrich(a, db)
 
 
 @router.post("/job/{job_id}", response_model=ApplicationOut)
@@ -62,9 +71,7 @@ def apply(job_id: int, data: ApplicationCreate, user: User = Depends(require_rol
         raise HTTPException(400, "Already applied")
 
     a = Application(
-        job_id=job_id, 
-        student_id=user.id, 
-        cover_note=data.cover_note or "",
+        job_id=job_id, student_id=user.id, cover_note=data.cover_note or "",
         match_score=match_score(user, j),
     )
     db.add(a)
@@ -73,6 +80,7 @@ def apply(job_id: int, data: ApplicationCreate, user: User = Depends(require_rol
 
     notif = Notification(
         user_id=j.employer_id,
+        application_id=a.id, # <-- Link Notification to App
         title="New Application",
         content=f"{user.full_name} applied for your job '{j.title}'.",
     )
@@ -100,19 +108,17 @@ def job_apps(job_id: int, user: User = Depends(require_role("employer")), db: Se
 @router.patch("/{app_id}/status")
 def update_status(app_id: int, status: str, user: User = Depends(require_role("employer")), db: Session = Depends(get_db)):
     a = db.get(Application, app_id)
-    if not a:
-        raise HTTPException(404, "Not found")
+    if not a: raise HTTPException(404, "Not found")
     j = db.get(Job, a.job_id)
-    if not j or j.employer_id != user.id:
-        raise HTTPException(403, "Not allowed")
-    if status not in ("pending", "shortlisted", "rejected", "hired"):
-        raise HTTPException(400, "Invalid status")
+    if not j or j.employer_id != user.id: raise HTTPException(403, "Not allowed")
+    if status not in ("pending", "shortlisted", "rejected", "hired"): raise HTTPException(400, "Invalid status")
     
     a.status = status
     db.commit()
 
     notif = Notification(
         user_id=a.student_id,
+        application_id=a.id, # <-- Link Notification to App
         title="Application Update",
         content=f"Your application for '{j.title}' is now {status.upper()}.",
     )

@@ -49,10 +49,10 @@ def send_message(app_id: int, data: MessageCreate, user: User = Depends(get_curr
     db.commit()
     db.refresh(m)
 
-    # Notify Recipient
     recipient_id = app.student_id if user.id == job.employer_id else job.employer_id
     notif = Notification(
         user_id=recipient_id,
+        application_id=app_id, # <-- Link Notification to App
         title="New Message",
         content=f"{user.full_name} sent you a message about '{job.title}'.",
     )

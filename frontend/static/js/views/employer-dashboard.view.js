@@ -4,11 +4,19 @@ import { employerVM } from "../viewmodels/employer.vm.js";
 import { toast } from "../core/toast.js";
 import { openChatModal } from "./chat-modal.view.js";
 
-export async function employerDashboardView() {
+export async function employerDashboardView(ctx) {
   if (!session.user) return redirectLogin();
   const jobs = await jobsVM.mine().catch(() => []);
 
-  setTimeout(() => bind(jobs), 0);
+  setTimeout(() => {
+    bind(jobs);
+    // AUTO-OPEN CHAT IF URL HAS ?chat=123
+    if (ctx && ctx.params && ctx.params.chat) {
+      const appId = Number(ctx.params.chat);
+      openChatModal(appId); // Chat modal will auto-fetch applicant name
+      window.history.replaceState(null, null, window.location.pathname + "#/dashboard");
+    }
+  }, 0);
 
   return `
   <section class="section">
@@ -198,7 +206,6 @@ async function openApplicants(jobId, jobs) {
       const appId = Number(b.dataset.chat);
       const name = b.dataset.name;
       const job = b.dataset.job;
-      // Close applicants modal first so chat modal is clean
       close();
       openChatModal(appId, name, job);
     });
@@ -224,17 +231,13 @@ function openProfileModal(a) {
           <div class="card" style="padding:1rem">
             <div class="stat__label">Email</div>
             <div style="margin-top:.25rem;font-size:.92rem;word-break:break-all">
-              ${a.student_email
-                ? `<a href="mailto:${escape(a.student_email)}" style="color:var(--brand-600)">${escape(a.student_email)}</a>`
-                : "—"}
+              ${a.student_email ? `<a href="mailto:${escape(a.student_email)}" style="color:var(--brand-600)">${escape(a.student_email)}</a>` : "—"}
             </div>
           </div>
           <div class="card" style="padding:1rem">
             <div class="stat__label">Phone</div>
             <div style="margin-top:.25rem;font-size:.92rem">
-              ${a.student_phone
-                ? `<a href="tel:${escape(a.student_phone)}" style="color:var(--brand-600)">${escape(a.student_phone)}</a>`
-                : "—"}
+              ${a.student_phone ? `<a href="tel:${escape(a.student_phone)}" style="color:var(--brand-600)">${escape(a.student_phone)}</a>` : "—"}
             </div>
           </div>
           <div class="card" style="padding:1rem">
