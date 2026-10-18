@@ -48,19 +48,20 @@ export function bindNotificationEvents() {
           list.innerHTML = `<div class="text-center text-muted text-sm" style="padding:1rem">No notifications yet.</div>`;
         } else {
           list.innerHTML = notifs.map(n => `
-            <div data-notif-id="${n.id}" data-app-id="${n.application_id || ''}" data-is-read="${n.is_read}" 
-                 style="padding:.75rem;border-bottom:1px solid var(--c-border);font-size:.85rem;background:${n.is_read ? 'transparent' : 'rgba(99, 102, 241, 0.15)'}; border-radius:6px; margin-bottom:4px; cursor:${n.application_id ? 'pointer' : 'default'}; hover:background:var(--c-bg-muted)">
+            <div data-notif-id="${n.id}" data-app-id="${n.application_id || ''}" data-type="${n.type || 'info'}" data-is-read="${n.is_read}" 
+                 style="padding:.75rem;border-bottom:1px solid var(--c-border);font-size:.85rem;background:${n.is_read ? 'transparent' : 'rgba(99, 102, 241, 0.15)'}; border-radius:6px; margin-bottom:4px; cursor:pointer;">
               <div style="font-weight:600;color:var(--c-text)">${escape(n.title)}</div>
               <div style="color:var(--c-text-soft);margin-top:.2rem">${escape(n.content)}</div>
               <div style="font-size:.7rem;color:var(--c-text-muted);margin-top:.35rem">${new Date(n.created_at).toLocaleString()}</div>
             </div>
           `).join("");
 
-          // Attach click listeners to mark read and navigate
+          // Attach click listeners
           list.querySelectorAll("[data-notif-id]").forEach(el => {
             el.addEventListener("click", async () => {
               const notifId = Number(el.dataset.notifId);
               const appId = el.dataset.appId;
+              const type = el.dataset.type;
               const isRead = el.dataset.isRead === "true";
 
               if (!isRead) {
@@ -68,9 +69,14 @@ export function bindNotificationEvents() {
                 window.dispatchEvent(new CustomEvent("refresh-notifications"));
               }
 
-              if (appId) {
-                panel.classList.add("hidden");
+              panel.classList.add("hidden");
+
+              // ONLY open chat if the notification is specifically a "message"
+              if (type === "message" && appId) {
                 window.location.hash = `#/dashboard?chat=${appId}`;
+              } else {
+                // For "application" or "status" notifications, just go to dashboard
+                window.location.hash = `#/dashboard`;
               }
             });
           });

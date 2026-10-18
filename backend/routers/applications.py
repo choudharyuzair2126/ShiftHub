@@ -70,6 +70,7 @@ def apply(job_id: int, data: ApplicationCreate, user: User = Depends(require_rol
     notif = Notification(
         user_id=j.employer_id,
         application_id=a.id,
+        type="application", # <--- ADDED
         title="New Application",
         content=f"{user.full_name} applied for your job '{j.title}'.",
     )
@@ -108,6 +109,7 @@ def update_status(app_id: int, status: str, user: User = Depends(require_role("e
     notif = Notification(
         user_id=a.student_id,
         application_id=a.id,
+        type="status", # <--- ADDED
         title="Application Update",
         content=f"Your application for '{j.title}' is now {status.upper()}.",
     )
@@ -117,7 +119,6 @@ def update_status(app_id: int, status: str, user: User = Depends(require_role("e
     return {"ok": True}
 
 
-# IMPORTANT: This dynamic route MUST be at the bottom so it doesn't intercept /mine or /job/...
 @router.get("/{app_id}", response_model=ApplicationOut)
 def get_app(app_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     a = db.get(Application, app_id)

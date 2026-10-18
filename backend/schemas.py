@@ -131,6 +131,7 @@ class MessageOut(BaseModel):
 class NotificationOut(BaseModel):
     id: int
     application_id: Optional[int] = None
+    type: Optional[str] = "info" # NEW
     title: str
     content: str
     is_read: bool
