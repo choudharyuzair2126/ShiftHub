@@ -150,29 +150,38 @@ function openProfile() {
   root.querySelector("[data-modal]").addEventListener("click", e => e.stopPropagation());
   function close() { root.innerHTML = ""; }
 
-  root.querySelector("[data-profile-form]").addEventListener("submit", async (e) => {
+  const profileForm = root.querySelector("[data-profile-form]");
+  const resumeInput = profileForm.querySelector('input[name="resume"]');
+  resumeInput.addEventListener("change", async () => {
+    const resumeFile = resumeInput.files[0];
+    if (!resumeFile) return;
+
+    const submitButton = profileForm.querySelector('button[type="submit"]');
+    const originalText = submitButton.textContent;
+    resumeInput.disabled = true;
+    submitButton.disabled = true;
+    submitButton.textContent = "Parsing Resume…";
+
+    try {
+      await authVM.uploadResume(resumeFile);
+      close();
+      openProfile();
+    } catch (err) {
+      toast.error(err.message);
+      resumeInput.value = "";
+      resumeInput.disabled = false;
+      submitButton.disabled = false;
+      submitButton.textContent = originalText;
+    }
+  });
+
+  profileForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const btn = e.target.querySelector('button[type="submit"]');
     const originalText = btn.textContent;
     
     try {
-      const resumeFile = fd.get("resume");
-      
-      // 1. If a resume is uploaded, extract AI data and pause
-      if (resumeFile && resumeFile.size > 0) {
-        btn.disabled = true;
-        btn.textContent = "Parsing Resume…";
-        
-        await authVM.uploadResume(resumeFile);
-        
-        close();
-        toast.success("Resume parsed! Please review the extracted fields.");
-        openProfile(); // Re-open modal with newly populated fields
-        return; // Stop execution here so we don't overwrite with empty form data
-      }
-
-      // 2. Otherwise, just save the manual form updates
       btn.disabled = true;
       btn.textContent = "Saving…";
       
