@@ -170,7 +170,7 @@ def _ask_groq(message: str, history: List[dict], jobs_context: str) -> Optional[
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Public API — Chat
 # ---------------------------------------------------------------------------
 
 def chat(message: str, history: List[dict] = None, jobs_context: str = "") -> str:
@@ -194,6 +194,10 @@ def chat(message: str, history: List[dict] = None, jobs_context: str = "") -> st
     print("🤖 All providers failed — using local fallback")
     return _fallback_reply(message, jobs_context)
 
+
+# ---------------------------------------------------------------------------
+# Public API — Resume Parsing
+# ---------------------------------------------------------------------------
 
 RESUME_EXTRACTION_PROMPT = """
 You are an expert AI resume parser. Extract the following information from the resume text provided.
@@ -234,7 +238,7 @@ def parse_resume_text(resume_text: str) -> dict:
                     {"role": "user", "content": f"Resume Text:\n{resume_text[:4000]}"},
                 ],
                 temperature=0.1,
-                max_tokens=500,
+                max_tokens=800, # Increased to prevent cut-offs
             )
             text = (response.choices[0].message.content or "").strip()
             return _clean_json_response(text)
@@ -245,10 +249,26 @@ def parse_resume_text(resume_text: str) -> dict:
 
 
 def _clean_json_response(text: str) -> dict:
+    """
+    Bulletproof JSON extractor.
+    1. Tries to find text wrapped in ```json ... ```
+    2. Finds the first '{' and last '}' and extracts everything between.
+    """
     try:
-        cleaned = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
-        data = json.loads(cleaned)
+        # 1. Extract JSON from markdown code blocks if present
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+        if match:
+            text = match.group(1)
+            
+        # 2. Extract everything between the first '{' and last '}'
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end+1]
+            
+        # 3. Parse
+        data = json.loads(text)
         return data if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, TypeError):
-        print("❌ Failed to parse AI JSON response.")
+    except Exception as e:
+        print(f"❌ Failed to parse AI JSON response: {e}")
         return {}
