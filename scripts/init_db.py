@@ -14,12 +14,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from backend.database import Base, engine
 from backend import models  # noqa: F401 — registers all models with Base
+from backend.main import _ensure_schema_columns
 
 
 def main():
     print(f"🔗 Using database: {engine.url.render_as_string(hide_password=True)}")
     print("🛠️  Creating tables…")
     Base.metadata.create_all(bind=engine)
+    _ensure_schema_columns()
     print("✅ Tables created successfully!")
 
 

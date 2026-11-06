@@ -10,7 +10,6 @@ from ..services.matching_service import match_score
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 
-
 def _enrich(a: Application, db: Session) -> ApplicationOut:
     out = ApplicationOut.model_validate(a)
     job = db.get(Job, a.job_id)
@@ -32,7 +31,8 @@ def _enrich(a: Application, db: Session) -> ApplicationOut:
         out.student_phone = student.phone
         out.student_bio = student.bio
         out.student_skills = list(student.skills or [])
-        out.student_availability = student.availability
+        out.student_education = student.education
+        out.student_experience = student.experience
         out.student_resume_path = student.resume_path
 
     if job and student:
@@ -44,7 +44,6 @@ def _enrich(a: Application, db: Session) -> ApplicationOut:
         out.match_score = new_score
 
     return out
-
 
 @router.post("/job/{job_id}", response_model=ApplicationOut)
 def apply(job_id: int, data: ApplicationCreate, user: User = Depends(require_role("student")), db: Session = Depends(get_db)):
@@ -70,7 +69,7 @@ def apply(job_id: int, data: ApplicationCreate, user: User = Depends(require_rol
     notif = Notification(
         user_id=j.employer_id,
         application_id=a.id,
-        type="application", # <--- ADDED
+        type="application",
         title="New Application",
         content=f"{user.full_name} applied for your job '{j.title}'.",
     )
@@ -79,12 +78,10 @@ def apply(job_id: int, data: ApplicationCreate, user: User = Depends(require_rol
 
     return _enrich(a, db)
 
-
 @router.get("/mine", response_model=List[ApplicationOut])
 def my_apps(user: User = Depends(require_role("student")), db: Session = Depends(get_db)):
     rows = db.query(Application).filter(Application.student_id == user.id).order_by(Application.created_at.desc()).all()
     return [_enrich(a, db) for a in rows]
-
 
 @router.get("/job/{job_id}", response_model=List[ApplicationOut])
 def job_apps(job_id: int, user: User = Depends(require_role("employer")), db: Session = Depends(get_db)):
@@ -93,7 +90,6 @@ def job_apps(job_id: int, user: User = Depends(require_role("employer")), db: Se
         raise HTTPException(404, "Not found")
     rows = db.query(Application).filter(Application.job_id == job_id).order_by(Application.match_score.desc()).all()
     return [_enrich(a, db) for a in rows]
-
 
 @router.patch("/{app_id}/status")
 def update_status(app_id: int, status: str, user: User = Depends(require_role("employer")), db: Session = Depends(get_db)):
@@ -109,7 +105,7 @@ def update_status(app_id: int, status: str, user: User = Depends(require_role("e
     notif = Notification(
         user_id=a.student_id,
         application_id=a.id,
-        type="status", # <--- ADDED
+        type="status",
         title="Application Update",
         content=f"Your application for '{j.title}' is now {status.upper()}.",
     )
@@ -118,6 +114,32 @@ def update_status(app_id: int, status: str, user: User = Depends(require_role("e
 
     return {"ok": True}
 
+@router.post("/job/{job_id}/auto-shortlist")
+def auto_shortlist(job_id: int, user: User = Depends(require_role("employer")), db: Session = Depends(get_db)):
+    j = db.get(Job, job_id)
+    if not j or j.employer_id != user.id:
+        raise HTTPException(404, "Job not found or unauthorized")
+
+    apps = db.query(Application).filter(Application.job_id == job_id).order_by(Application.match_score.desc()).all()
+    
+    if not apps:
+        raise HTTPException(400, "No applications to shortlist")
+
+    top_10 = apps[:10]
+    rest = apps[10:]
+
+    for a in top_10:
+        if a.status != "hired":
+            a.status = "shortlisted"
+            db.add(a)
+            
+    for a in rest:
+        if a.status == "shortlisted":
+            a.status = "pending"
+            db.add(a)
+
+    db.commit()
+    return {"ok": True, "message": f"Successfully shortlisted top {len(top_10)} applicants."}
 
 @router.get("/{app_id}", response_model=ApplicationOut)
 def get_app(app_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):

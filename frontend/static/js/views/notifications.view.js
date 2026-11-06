@@ -56,7 +56,6 @@ export function bindNotificationEvents() {
             </div>
           `).join("");
 
-          // Attach click listeners
           list.querySelectorAll("[data-notif-id]").forEach(el => {
             el.addEventListener("click", async () => {
               const notifId = Number(el.dataset.notifId);
@@ -71,11 +70,9 @@ export function bindNotificationEvents() {
 
               panel.classList.add("hidden");
 
-              // ONLY open chat if the notification is specifically a "message"
               if (type === "message" && appId) {
                 window.location.hash = `#/dashboard?chat=${appId}`;
               } else {
-                // For "application" or "status" notifications, just go to dashboard
                 window.location.hash = `#/dashboard`;
               }
             });

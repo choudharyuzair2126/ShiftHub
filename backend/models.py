@@ -15,7 +15,8 @@ class User(Base):
     phone = Column(String(30), default="")
     bio = Column(Text, default="")
     skills = Column(JSON, default=list)
-    availability = Column(String(80), default="")
+    education = Column(String(255), default="")   # NEW
+    experience = Column(String(255), default="")  # NEW
     resume_path = Column(String(500), default="")
     company_name = Column(String(120), default="")
     is_verified = Column(Boolean, default=False)
@@ -83,7 +84,7 @@ class Notification(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=True)
-    type = Column(String(50), default="info") # NEW: "message", "application", or "status"
+    type = Column(String(50), default="info")
     title = Column(String(150), nullable=False)
     content = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)

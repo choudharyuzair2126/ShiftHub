@@ -54,7 +54,7 @@ export const authVM = {
     fd.append("file", file);
     const me = await api.upload("/api/users/me/resume", fd);
     session.user = User.from(me);
-    toast.success("Resume uploaded to Cloudinary");
+    toast.success("Resume data extracted & saved to your profile!");
     return session.user;
   },
 

@@ -10,10 +10,9 @@ export async function employerDashboardView(ctx) {
 
   setTimeout(() => {
     bind(jobs);
-    // AUTO-OPEN CHAT IF URL HAS ?chat=123
     if (ctx && ctx.params && ctx.params.chat) {
       const appId = Number(ctx.params.chat);
-      openChatModal(appId); // Chat modal will auto-fetch applicant name
+      openChatModal(appId); 
       window.history.replaceState(null, null, window.location.pathname + "#/dashboard");
     }
   }, 0);
@@ -138,7 +137,10 @@ async function openApplicants(jobId, jobs) {
             <h3 style="margin:0">Applicants (${apps.length})</h3>
             <div class="text-muted text-sm">${escape(job.title)}</div>
           </div>
-          <button class="btn btn--icon btn--ghost" data-close>✕</button>
+          <div class="flex gap-2">
+            <button class="btn btn--primary btn--sm" data-auto-shortlist="${jobId}">✨ Auto-Shortlist Top 10</button>
+            <button class="btn btn--icon btn--ghost" data-close>✕</button>
+          </div>
         </div>
 
         ${apps.length ? `
@@ -159,7 +161,7 @@ async function openApplicants(jobId, jobs) {
                       <div style="font-weight:600;color:var(--c-text)">${escape(a.student_name || `Student #${a.student_id}`)}</div>
                       <div class="text-xs text-muted" style="margin-top:.15rem">
                         ${a.student_city ? `📍 ${escape(a.student_city)}` : ""}
-                        ${a.student_availability ? ` · ⏰ ${escape(a.student_availability)}` : ""}
+                        ${a.student_experience ? ` · ⏰ ${escape(a.student_experience)}` : ""}
                       </div>
                     </td>
                     <td><span class="badge badge--brand">${a.match_score}%</span></td>
@@ -184,6 +186,24 @@ async function openApplicants(jobId, jobs) {
   root.querySelectorAll("[data-close]").forEach(el => el.addEventListener("click", close));
   root.querySelector("[data-modal]").addEventListener("click", e => e.stopPropagation());
   function close() { root.innerHTML = ""; }
+
+  root.querySelector("[data-auto-shortlist]")?.addEventListener("click", async (e) => {
+    const btn = e.target;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "✨ Shortlisting…";
+    
+    try {
+      await employerVM.autoShortlist(jobId);
+      toast.success("Top 10 applicants shortlisted!");
+      close();
+      openApplicants(jobId, jobs);
+    } catch (err) {
+      toast.error(err.message);
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
 
   root.querySelectorAll("[data-status]").forEach(sel => {
     sel.addEventListener("change", async () => {
@@ -245,9 +265,14 @@ function openProfileModal(a) {
             <div style="margin-top:.25rem;font-size:.92rem">${escape(a.student_city || "—")}</div>
           </div>
           <div class="card" style="padding:1rem">
-            <div class="stat__label">Availability</div>
-            <div style="margin-top:.25rem;font-size:.92rem">${escape(a.student_availability || "—")}</div>
+            <div class="stat__label">Experience</div>
+            <div style="margin-top:.25rem;font-size:.92rem">${escape(a.student_experience || "—")}</div>
           </div>
+        </div>
+
+        <div class="card mt-4" style="padding:1rem">
+          <div class="stat__label">Latest Education</div>
+          <div style="margin-top:.25rem;font-size:.92rem">${escape(a.student_education || "—")}</div>
         </div>
 
         ${a.student_skills && a.student_skills.length ? `

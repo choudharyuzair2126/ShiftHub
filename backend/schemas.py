@@ -22,7 +22,8 @@ class UserOut(BaseModel):
     phone: str
     bio: str
     skills: List[str] = []
-    availability: str
+    education: str
+    experience: str
     company_name: str
     is_verified: bool
     resume_path: Optional[str] = ""
@@ -36,7 +37,8 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     bio: Optional[str] = None
     skills: Optional[List[str]] = None
-    availability: Optional[str] = None
+    education: Optional[str] = None
+    experience: Optional[str] = None
     company_name: Optional[str] = None
 
 class Token(BaseModel):
@@ -98,7 +100,8 @@ class ApplicationOut(BaseModel):
     student_phone: Optional[str] = None
     student_bio: Optional[str] = None
     student_skills: Optional[List[str]] = None
-    student_availability: Optional[str] = None
+    student_education: Optional[str] = None
+    student_experience: Optional[str] = None
     student_resume_path: Optional[str] = None
     class Config:
         from_attributes = True
@@ -131,7 +134,7 @@ class MessageOut(BaseModel):
 class NotificationOut(BaseModel):
     id: int
     application_id: Optional[int] = None
-    type: Optional[str] = "info" # NEW
+    type: Optional[str] = "info"
     title: str
     content: str
     is_read: bool

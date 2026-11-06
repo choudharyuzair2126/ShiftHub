@@ -9,7 +9,6 @@ from ..deps import get_current_user
 
 router = APIRouter(prefix="/api/messages", tags=["messages"])
 
-
 def _verify_access(app_id: int, user: User, db: Session) -> tuple[Application, Job]:
     app = db.get(Application, app_id)
     if not app:
@@ -20,7 +19,6 @@ def _verify_access(app_id: int, user: User, db: Session) -> tuple[Application, J
     if user.id != app.student_id and user.id != job.employer_id:
         raise HTTPException(403, "Not authorized to view this chat")
     return app, job
-
 
 @router.get("/application/{app_id}", response_model=List[MessageOut])
 def get_messages(app_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -34,7 +32,6 @@ def get_messages(app_id: int, user: User = Depends(get_current_user), db: Sessio
         msg.sender_name = sender.full_name if sender else "Unknown"
         out.append(msg)
     return out
-
 
 @router.post("/application/{app_id}", response_model=MessageOut)
 def send_message(app_id: int, data: MessageCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -53,7 +50,7 @@ def send_message(app_id: int, data: MessageCreate, user: User = Depends(get_curr
     notif = Notification(
         user_id=recipient_id,
         application_id=app_id,
-        type="message", # <--- ADDED
+        type="message",
         title="New Message",
         content=f"{user.full_name} sent you a message about '{job.title}'.",
     )
@@ -63,7 +60,6 @@ def send_message(app_id: int, data: MessageCreate, user: User = Depends(get_curr
     out = MessageOut.model_validate(m)
     out.sender_name = user.full_name
     return out
-
 
 @router.post("/application/{app_id}/read")
 def mark_read(app_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):

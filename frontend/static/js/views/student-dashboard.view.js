@@ -15,13 +15,11 @@ export async function studentDashboardView(ctx) {
 
   setTimeout(() => {
     bind();
-    // AUTO-OPEN CHAT IF URL HAS ?chat=123
     if (ctx && ctx.params && ctx.params.chat) {
       const appId = Number(ctx.params.chat);
       const app = apps.find(a => a.id === appId);
       if (app) {
         openChatModal(appId, app.company_name || app.employer_name, app.job_title);
-        // Clean the URL so it doesn't reopen on refresh
         window.history.replaceState(null, null, window.location.pathname + "#/dashboard");
       }
     }
@@ -131,7 +129,8 @@ function openProfile() {
           <div class="field"><label>Full name</label><input class="input" name="full_name" value="${escape(u.full_name)}" /></div>
           <div class="field"><label>City</label><input class="input" name="city" value="${escape(u.city || "")}" /></div>
           <div class="field"><label>Phone</label><input class="input" name="phone" value="${escape(u.phone || "")}" /></div>
-          <div class="field"><label>Availability (e.g. "Evenings, Weekends")</label><input class="input" name="availability" value="${escape(u.availability || "")}" /></div>
+          <div class="field"><label>Latest Education / Degree</label><input class="input" name="education" value="${escape(u.education || "")}" placeholder="e.g. BS Computer Science" /></div>
+          <div class="field"><label>Total Experience</label><input class="input" name="experience" value="${escape(u.experience || "")}" placeholder="e.g. 2 years" /></div>
           <div class="field"><label>Skills (comma-separated)</label><input class="input" name="skills" value="${(u.skills || []).join(", ")}" /></div>
           <div class="field"><label>Bio</label><textarea class="textarea" name="bio">${escape(u.bio || "")}</textarea></div>
           <div class="field">
@@ -161,7 +160,8 @@ function openProfile() {
         full_name: fd.get("full_name"),
         city: fd.get("city"),
         phone: fd.get("phone"),
-        availability: fd.get("availability"),
+        education: fd.get("education"),
+        experience: fd.get("experience"),
         bio: fd.get("bio"),
         skills: (fd.get("skills") || "").split(",").map(s => s.trim()).filter(Boolean),
       });

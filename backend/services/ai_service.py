@@ -10,6 +10,8 @@ Any provider failure (missing key, rate limit, timeout, bad response)
 automatically falls through to the next provider.
 """
 from typing import List, Optional
+import json
+import re
 import traceback
 
 from ..config import get_settings
@@ -61,8 +63,8 @@ def _load_gemini():
     if _gemini_initialised:
         return _gemini_model
     _gemini_initialised = True
-    if not settings.GEMINI_API_KEY:
-        print("ℹ️  Gemini not configured (GEMINI_API_KEY empty).")
+    if not settings.GEMINI_API_KEY or "your-" in settings.GEMINI_API_KEY.lower():
+        print("ℹ️  Gemini not configured (GEMINI_API_KEY empty or placeholder).")
         return None
     try:
         import google.generativeai as genai
@@ -119,8 +121,8 @@ def _load_groq():
     if _groq_initialised:
         return _groq_client
     _groq_initialised = True
-    if not settings.GROQ_API_KEY:
-        print("ℹ️  Groq not configured (GROQ_API_KEY empty).")
+    if not settings.GROQ_API_KEY or "your-" in settings.GROQ_API_KEY.lower():
+        print("ℹ️  Groq not configured (GROQ_API_KEY empty or placeholder).")
         return None
     try:
         from groq import Groq
@@ -191,3 +193,62 @@ def chat(message: str, history: List[dict] = None, jobs_context: str = "") -> st
     # 3. Canned reply
     print("🤖 All providers failed — using local fallback")
     return _fallback_reply(message, jobs_context)
+
+
+RESUME_EXTRACTION_PROMPT = """
+You are an expert AI resume parser. Extract the following information from the resume text provided.
+Return ONLY a valid JSON object with these exact keys. Do not include markdown code blocks or any other text.
+If a field is not found, use an empty string or an empty array.
+
+{
+  "full_name": "First and Last Name",
+  "phone": "Phone number",
+  "city": "City name",
+  "education": "Latest degree or last education (e.g., BS Computer Science)",
+  "experience": "Total years of experience or recent job (e.g., 2 years, or Waiter at Cafe)",
+  "skills": ["skill1", "skill2", "skill3"],
+  "bio": "A short 2-3 sentence professional summary."
+}
+"""
+
+
+def parse_resume_text(resume_text: str) -> dict:
+    model = _load_gemini()
+    if model:
+        try:
+            prompt = f"{RESUME_EXTRACTION_PROMPT}\n\nResume Text:\n{resume_text[:4000]}"
+            response = model.generate_content(prompt)
+            data = _clean_json_response((getattr(response, "text", "") or "").strip())
+            if data:
+                return data
+        except Exception as e:
+            print(f"⚠️ Gemini resume parsing failed: {e}")
+
+    client = _load_groq()
+    if client:
+        try:
+            response = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": RESUME_EXTRACTION_PROMPT},
+                    {"role": "user", "content": f"Resume Text:\n{resume_text[:4000]}"},
+                ],
+                temperature=0.1,
+                max_tokens=500,
+            )
+            text = (response.choices[0].message.content or "").strip()
+            return _clean_json_response(text)
+        except Exception as e:
+            print(f"⚠️ Groq resume parsing failed: {e}")
+
+    return {}
+
+
+def _clean_json_response(text: str) -> dict:
+    try:
+        cleaned = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
+        data = json.loads(cleaned)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, TypeError):
+        print("❌ Failed to parse AI JSON response.")
+        return {}

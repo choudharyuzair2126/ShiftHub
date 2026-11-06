@@ -9,6 +9,9 @@ export const employerVM = {
   async setStatus(appId, status) {
     await api.patch(`/api/applications/${appId}/status?status=${status}`, {});
   },
+  async autoShortlist(jobId) {
+    await api.post(`/api/applications/job/${jobId}/auto-shortlist`, {});
+  }
 };
 
 export const studentVM = {
