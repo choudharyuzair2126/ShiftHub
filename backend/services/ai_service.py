@@ -106,15 +106,14 @@ def chat(message: str, history: List[dict] = None, jobs_context: str = "") -> st
 # Public API — Resume Parsing
 # ---------------------------------------------------------------------------
 
-CURRENT_YEAR = datetime.now().year
-
-RESUME_EXTRACTION_PROMPT = f"""
+# Notice: No f-strings here to prevent breaking Groq's JSON mode
+RESUME_EXTRACTION_PROMPT = """
 You are an expert AI resume parser. Extract the following information from the resume text provided.
 Return ONLY a valid JSON object with these exact keys.
 
 CRITICAL INSTRUCTIONS:
 1. "education": Find the EDUCATION section. Extract the HIGHEST degree, field of study, and university. Format: "BS Computer Science, PMAS Arid Agriculture University".
-2. "experience": DO NOT copy the summary text (e.g., ignore "4+ years"). Look ONLY at the work history dates in the EXPERIENCE section. Find the EARLIEST starting year (e.g., 2020). Subtract it from the CURRENT YEAR ({CURRENT_YEAR}) to calculate total years. Example: If earliest date is 2020 and current year is {CURRENT_YEAR}, output "6 years".
+2. "experience": Look ONLY at the work history dates in the EXPERIENCE section. Find the EARLIEST starting year. Calculate the total years of experience by subtracting that year from the CURRENT YEAR provided in the user message. Do NOT copy text from the summary (e.g., ignore "4+ years"). Output only the calculated years (e.g., "6 years").
 3. "phone": Extract the phone number.
 4. "city": Extract the city (e.g., "Lahore").
 5. "skills": Extract an array of ALL technical and soft skills listed.
@@ -122,15 +121,16 @@ CRITICAL INSTRUCTIONS:
 
 If a field is not found, use an empty string "" or an empty array [].
 
-{{
+JSON Schema:
+{
   "full_name": "First and Last Name",
   "phone": "Phone number",
   "city": "City name",
   "education": "Degree, University",
-  "experience": "Calculated Total Years (e.g., 6 years)",
+  "experience": "Calculated Total Years",
   "skills": ["skill1", "skill2", "skill3"],
   "bio": "A short 1-2 sentence professional summary."
-}}
+}
 """
 
 def _resume_context(resume_text: str) -> str:
@@ -141,12 +141,15 @@ def _resume_context(resume_text: str) -> str:
 def parse_resume_text(resume_text: str) -> dict:
     resume_context = _resume_context(resume_text)
     parsed_data = {}
+    
+    current_year = datetime.now().year
+    user_message = f"CURRENT YEAR: {current_year}\n\nResume Text:\n{resume_context}"
 
     # 1. Try Gemini
     model = _load_gemini()
     if model:
         try:
-            prompt = f"{RESUME_EXTRACTION_PROMPT}\n\nResume Text:\n{resume_context}"
+            prompt = f"{RESUME_EXTRACTION_PROMPT}\n\n{user_message}"
             response = model.generate_content(prompt)
             data = _clean_json_response((getattr(response, "text", "") or "").strip())
             if data:
@@ -164,14 +167,13 @@ def parse_resume_text(resume_text: str) -> dict:
                 model=settings.GROQ_MODEL,
                 messages=[
                     {"role": "system", "content": RESUME_EXTRACTION_PROMPT},
-                    {"role": "user", "content": f"Resume Text:\n{resume_context}"},
+                    {"role": "user", "content": user_message},
                 ],
                 temperature=0.1,
                 max_tokens=2048, 
                 response_format={"type": "json_object"} 
             )
-            choice = response.choices[0]
-            text = (choice.message.content or "").strip()
+            text = (response.choices[0].message.content or "").strip()
             data = _clean_json_response(text)
             if data:
                 return {
