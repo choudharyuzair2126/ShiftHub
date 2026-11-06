@@ -208,11 +208,13 @@ If a field is not found, use an empty string or an empty array.
   "full_name": "First and Last Name",
   "phone": "Phone number",
   "city": "City name",
-  "education": "Latest degree or last education (e.g., BS Computer Science)",
-  "experience": "Total years of experience or recent job (e.g., 2 years, or Waiter at Cafe)",
+  "education": "Extract the HIGHEST or MOST RECENT degree. Format as 'Degree, University' (e.g., BS Computer Science, University of Sahiwal). NEVER leave this empty if any education is mentioned.",
+  "experience": "Calculate the TOTAL cumulative duration of work experience based on the start/end dates in the resume (e.g., '2 years 6 months', '6 months'). Do NOT just list a job title. Do NOT just write 'Freelance Developer'. You must output the calculated time.",
   "skills": ["skill1", "skill2", "skill3"],
   "bio": "A short 2-3 sentence professional summary."
 }
+
+If you cannot calculate the exact time but see a year (e.g., 2020-2023), calculate it (3 years).
 """
 
 
@@ -238,7 +240,7 @@ def parse_resume_text(resume_text: str) -> dict:
                     {"role": "user", "content": f"Resume Text:\n{resume_text[:4000]}"},
                 ],
                 temperature=0.1,
-                max_tokens=800, # Increased to prevent cut-offs
+                max_tokens=800,
             )
             text = (response.choices[0].message.content or "").strip()
             return _clean_json_response(text)
@@ -255,18 +257,15 @@ def _clean_json_response(text: str) -> dict:
     2. Finds the first '{' and last '}' and extracts everything between.
     """
     try:
-        # 1. Extract JSON from markdown code blocks if present
         match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
         if match:
             text = match.group(1)
             
-        # 2. Extract everything between the first '{' and last '}'
         start = text.find('{')
         end = text.rfind('}')
         if start != -1 and end != -1 and end > start:
             text = text[start:end+1]
             
-        # 3. Parse
         data = json.loads(text)
         return data if isinstance(data, dict) else {}
     except Exception as e:
