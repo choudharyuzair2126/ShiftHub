@@ -136,7 +136,7 @@ def _date_token(prefix: str) -> str:
     return (
         rf"(?:(?P<{prefix}_month_name>Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
         rf"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|"
-        rf"Nov(?:ember)?|Dec(?:ember)?)\s+|(?P<{prefix}_numeric_month>0?[1-9]|1[0-2])[/.-])?"
+        rf"Nov(?:ember)?|Dec(?:ember)?)\s+|(?P<{prefix}_numeric_month>0?[1-9]|1[0-2])\s*[/.-]\s*)?"
         rf"(?P<{prefix}_year>19\d{{2}}|20\d{{2}})"
     )
 
@@ -148,12 +148,16 @@ _DATE_RANGE = re.compile(
 )
 _WORK_SECTION = re.compile(
     r"^\s*(?:(?:professional|relevant|employment|work)\s+)?"
-    r"(?:work\s+)?(?:experience|history|employment history)\s*:?\s*$",
+    r"(?:work\s+)?(?:experiences?|history|employment history)\s*:?\s*$",
     re.IGNORECASE,
 )
 _OTHER_SECTION = re.compile(
     r"^\s*(?:education|academic|skills|projects|certifications?|"
     r"volunteer(?:ing)?|awards|references|languages|interests)\s*:?\s*$",
+    re.IGNORECASE,
+)
+_EDUCATION_SECTION = re.compile(
+    r"^\s*(?:education|academic(?:\s+background)?)\s*:?\s*$",
     re.IGNORECASE,
 )
 
@@ -187,14 +191,21 @@ def _experience_section(resume_text: str) -> str:
 
     # Some resumes omit section headings. In that case, use date ranges outside
     # clearly labeled education blocks rather than letting graduation dates count.
-    text_without_education = re.sub(
-        r"(?ims)^\s*(?:education|academic(?:\s+background)?)\s*:?\s*$.*?"
-        r"(?=^\s*(?:experience|employment|work history|skills|projects|"
-        r"certifications?|volunteer(?:ing)?|awards|references|languages)\s*:?\s*$|\Z)",
-        "",
-        resume_text,
-    )
-    return text_without_education
+    return _resume_without_education(resume_text)
+
+
+def _resume_without_education(resume_text: str) -> str:
+    lines = []
+    in_education = False
+    for line in resume_text.splitlines():
+        if _EDUCATION_SECTION.match(line):
+            in_education = True
+            continue
+        if in_education and (_WORK_SECTION.match(line) or _OTHER_SECTION.match(line)):
+            in_education = False
+        if not in_education:
+            lines.append(line)
+    return "\n".join(lines)
 
 
 def _date_to_month(match: re.Match, prefix: str) -> int:
@@ -205,11 +216,21 @@ def _date_to_month(match: re.Match, prefix: str) -> int:
     return year * 12 + month - 1
 
 
+def _normalize_spaced_digits(text: str) -> str:
+    text = re.sub(r"(?<=\d)\s+(?=\d)", "", text)
+    return re.sub(
+        r"(?<![a-z])p\s*r\s*e\s*s\s*e\s*n\s*t(?![a-z])",
+        "present",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+
 def _date_range_end_month(match: re.Match) -> int:
     end = match.group("end")
     if end.lower() in {"present", "current", "now"}:
         now = datetime.now()
-        return now.year * 12 + now.month
+        return now.year * 12 + now.month - 1
     end_month = _date_to_month(match, "end")
     if match.group("end_month_name") or match.group("end_numeric_month"):
         return end_month + 1
@@ -227,16 +248,26 @@ def _format_experience(months: int) -> str:
 
 
 def _calculate_total_experience(resume_text: str) -> str:
-    experience_text = _experience_section(resume_text)
+    experience_text = _normalize_spaced_digits(_experience_section(resume_text))
+    full_text = _normalize_spaced_digits(resume_text)
     now = datetime.now()
     current_month = now.year * 12 + now.month
     intervals = []
 
-    for match in _DATE_RANGE.finditer(experience_text):
-        start = _date_to_month(match, "start")
-        end = _date_range_end_month(match)
-        if start < end <= current_month and start >= 1950 * 12:
-            intervals.append((start, end))
+    for source, include_year_only in ((experience_text, True), (full_text, False)):
+        for match in _DATE_RANGE.finditer(source):
+            has_month = any(
+                match.group(f"{prefix}_{part}")
+                for prefix in ("start", "end")
+                for part in ("month_name", "numeric_month")
+            )
+            if not include_year_only and not has_month:
+                continue
+            start = _date_to_month(match, "start")
+            end = _date_range_end_month(match)
+            interval = (start, end)
+            if start < end <= current_month and start >= 1950 * 12 and interval not in intervals:
+                intervals.append(interval)
 
     if intervals:
         intervals.sort()
@@ -255,8 +286,9 @@ def _calculate_total_experience(resume_text: str) -> str:
     # treating graduation years or dates from unrelated sections as experience.
     explicit = re.findall(
         r"(?<!\d)(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)"
-        r"(?:\s*(?:and)?\s*(\d+)\s*months?)?\s*(?:of\s+)?(?:work\s+)?experience",
-        experience_text,
+        r"(?:\s*(?:and)?\s*(\d+)\s*months?)?\s*(?:of\s+)?"
+        r"(?:(?:professional|relevant|industry|work)\s+)?experience",
+        _resume_without_education(resume_text),
         re.IGNORECASE,
     )
     if explicit:
