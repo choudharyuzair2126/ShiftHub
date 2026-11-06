@@ -112,7 +112,7 @@ Return ONLY a valid JSON object with these exact keys.
 
 CRITICAL INSTRUCTIONS:
 1. "education": Find the EDUCATION section. Extract the HIGHEST degree, field of study, and university. Format: "BS Computer Science, PMAS Arid Agriculture University".
-2. "experience": Output "Calculating..." (The Python script will override this with accurate math based on dates).
+2. "earliest_work_year": Find the starting year of the EARLIEST work experience. ONLY look at jobs/internships. DO NOT include education years (e.g., if they graduated in 2020 but started working in 2022, return 2022). Return ONLY a 4-digit year (e.g., 2020). If no work experience, return 0.
 3. "phone": Extract the phone number.
 4. "city": Extract the city (e.g., "Lahore").
 5. "skills": Extract a MAXIMUM of 15 specific TECHNICAL skills (e.g., "Flutter", "Python", "Firebase", "Java"). Do NOT include soft skills, sentences, or achievements.
@@ -124,7 +124,7 @@ JSON Schema:
   "phone": "Phone number",
   "city": "City name",
   "education": "Degree, University",
-  "experience": "Calculating...",
+  "earliest_work_year": 2020,
   "skills": ["skill1", "skill2", "skill3"],
   "bio": "A short 1-2 sentence professional summary."
 }
@@ -172,34 +172,33 @@ def parse_resume_text(resume_text: str) -> dict:
         except Exception as e:
             print(f"⚠️ Groq resume parsing failed: {e}")
 
-    # 3. PYTHON HYBRID CALCULATION (Bulletproof Regex)
-    # Search for the Experience section (handles ## EXPERIENCE, WORK HISTORY, etc.)
-    exp_match = re.search(
-        r'(?i)(?:#*\s*(?:EXPERIENCE|EMPLOYMENT|WORK HISTORY)\s*#*)(.*?)(?=#*\s*(?:EDUCATION|ACADEMIC|CERTIFICATIONS|PROJECTS|SKILLS)\s*#*|$)', 
-        resume_context, 
-        re.DOTALL
-    )
+    # 3. PYTHON MATH (100% Accurate, handles ANY layout)
+    current_year = datetime.now().year
+    earliest_year = parsed_data.get("earliest_work_year")
     
-    # If we found the experience section, search only there. Otherwise, search the whole text.
-    search_text = exp_match.group(1) if exp_match else resume_context
-    
-    # Find all 4-digit years (e.g., 2020, 2023)
-    years = [int(y) for y in re.findall(r'\b(19\d{2}|20\d{2})\b', search_text)]
-    
-    if years:
-        earliest_year = min(years)
-        current_year = datetime.now().year
-        if 1990 < earliest_year <= current_year:
-            calculated_exp = f"{current_year - earliest_year} years"
-            parsed_data["experience"] = calculated_exp
-            print(f"📊 Python calculated exact experience: {calculated_exp} (Earliest year: {earliest_year})")
+    # If the AI successfully found an earliest work year
+    if earliest_year and isinstance(earliest_year, (int, float)) and 1990 < earliest_year <= current_year:
+        calculated_exp = f"{current_year - int(earliest_year)} years"
+        parsed_data["experience"] = calculated_exp
+        print(f"📊 Python calculated exact experience: {calculated_exp} (Earliest work year: {earliest_year})")
+    else:
+        # Fallback: If AI failed to find a year, we manually scan the text for any year
+        years = [int(y) for y in re.findall(r'\b(19\d{2}|20\d{2})\b', resume_context)]
+        if years:
+            # Just take the earliest year found in the whole document as a last resort
+            earliest_found = min(years)
+            if 1990 < earliest_found <= current_year:
+                calculated_exp = f"{current_year - earliest_found} years"
+                parsed_data["experience"] = calculated_exp
+                print(f"📊 Fallback Python calculated experience: {calculated_exp} (Earliest year found: {earliest_found})")
+            else:
+                parsed_data["experience"] = "Fresher"
         else:
             parsed_data["experience"] = "Fresher"
-    else:
-        parsed_data["experience"] = parsed_data.get("experience", "Fresher")
-        if parsed_data["experience"] == "Calculating...":
-            parsed_data["experience"] = "Fresher"
-        print(f"📊 No dates found. Using AI/fallback experience: {parsed_data['experience']}")
+            print("📊 No years found anywhere in the text.")
+
+    # Remove the temporary earliest_work_year field so it doesn't clutter the DB
+    parsed_data.pop("earliest_work_year", None)
 
     # Clean up the skills array
     if "skills" in parsed_data and isinstance(parsed_data["skills"], list):
