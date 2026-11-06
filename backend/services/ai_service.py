@@ -112,11 +112,10 @@ Return ONLY a valid JSON object with these exact keys.
 
 CRITICAL INSTRUCTIONS:
 1. "education": Find the EDUCATION section. Extract the HIGHEST degree, field of study, and university. Format: "BS Computer Science, PMAS Arid Agriculture University".
-2. "earliest_work_year": Find the starting year of the EARLIEST work experience. ONLY look at jobs/internships. DO NOT include education years (e.g., if they graduated in 2020 but started working in 2022, return 2022). Return ONLY a 4-digit year (e.g., 2020). If no work experience, return 0.
-3. "phone": Extract the phone number.
-4. "city": Extract the city (e.g., "Lahore").
-5. "skills": Extract a MAXIMUM of 15 specific TECHNICAL skills (e.g., "Flutter", "Python", "Firebase", "Java"). Do NOT include soft skills, sentences, or achievements.
-6. "bio": Write a VERY short 1-2 sentence summary (maximum 25 words).
+2. "phone": Extract the phone number.
+3. "city": Extract the city (e.g., "Lahore").
+4. "skills": Extract a MAXIMUM of 15 specific TECHNICAL skills (e.g., "Flutter", "Python", "Firebase", "Java"). Do NOT include soft skills, sentences, or achievements.
+5. "bio": Write a VERY short 1-2 sentence summary (maximum 25 words).
 
 JSON Schema:
 {
@@ -124,7 +123,6 @@ JSON Schema:
   "phone": "Phone number",
   "city": "City name",
   "education": "Degree, University",
-  "earliest_work_year": 2020,
   "skills": ["skill1", "skill2", "skill3"],
   "bio": "A short 1-2 sentence professional summary."
 }
@@ -172,33 +170,24 @@ def parse_resume_text(resume_text: str) -> dict:
         except Exception as e:
             print(f"⚠️ Groq resume parsing failed: {e}")
 
-    # 3. PYTHON MATH (100% Accurate, handles ANY layout)
-    current_year = datetime.now().year
-    earliest_year = parsed_data.get("earliest_work_year")
+    # 3. PYTHON MATH (100% Accurate, overrides AI completely)
+    # Scan the ENTIRE resume for any 4-digit years between 1990 and 2026
+    all_years = [int(y) for y in re.findall(r'\b(19[9]\d|20[0-2]\d)\b', resume_context)]
     
-    # If the AI successfully found an earliest work year
-    if earliest_year and isinstance(earliest_year, (int, float)) and 1990 < earliest_year <= current_year:
-        calculated_exp = f"{current_year - int(earliest_year)} years"
-        parsed_data["experience"] = calculated_exp
-        print(f"📊 Python calculated exact experience: {calculated_exp} (Earliest work year: {earliest_year})")
-    else:
-        # Fallback: If AI failed to find a year, we manually scan the text for any year
-        years = [int(y) for y in re.findall(r'\b(19\d{2}|20\d{2})\b', resume_context)]
-        if years:
-            # Just take the earliest year found in the whole document as a last resort
-            earliest_found = min(years)
-            if 1990 < earliest_found <= current_year:
-                calculated_exp = f"{current_year - earliest_found} years"
-                parsed_data["experience"] = calculated_exp
-                print(f"📊 Fallback Python calculated experience: {calculated_exp} (Earliest year found: {earliest_found})")
-            else:
-                parsed_data["experience"] = "Fresher"
+    if all_years:
+        # Find the earliest year mentioned in the whole document
+        earliest_year = min(all_years)
+        current_year = datetime.now().year
+        
+        if earliest_year <= current_year:
+            calculated_exp = f"{current_year - earliest_year} years"
+            parsed_data["experience"] = calculated_exp
+            print(f"📊 Python calculated exact experience: {calculated_exp} (Earliest year found: {earliest_year})")
         else:
             parsed_data["experience"] = "Fresher"
-            print("📊 No years found anywhere in the text.")
-
-    # Remove the temporary earliest_work_year field so it doesn't clutter the DB
-    parsed_data.pop("earliest_work_year", None)
+    else:
+        parsed_data["experience"] = "Fresher"
+        print("📊 No years found anywhere in the text.")
 
     # Clean up the skills array
     if "skills" in parsed_data and isinstance(parsed_data["skills"], list):
