@@ -22,17 +22,6 @@ SYSTEM_PROMPT = (
 )
 
 def _fallback_reply(message: str, jobs_context: str = "") -> str:
-    m = message.lower()
-    if any(w in m for w in ["hello", "hi ", "hey", "salam"]):
-        return "Hi! 👋 I can help you find part-time jobs, upload your resume, or answer questions about ShiftHub."
-    if "resume" in m or "cv" in m:
-        return "You can upload your CV from your Dashboard → Profile. It helps employers review your application faster."
-    if "apply" in m:
-        return "Open any job, click 'Apply Now', and add a short cover note. Your match score is shown automatically."
-    if "verify" in m or "email" in m:
-        return "Check your inbox for the verification email — click the link inside. If you don't see it, check spam."
-    if "job" in m or "work" in m or "part" in m:
-        return "Browse the Jobs page — filter by city, category, or shift to see the best matches for you."
     return "I'm here to help with jobs, applications, resumes, and ShiftHub features. What would you like to know?"
 
 # ---------------------------------------------------------------------------
@@ -48,8 +37,7 @@ def _load_gemini():
     global _gemini_model, _gemini_initialised
     if _gemini_initialised: return _gemini_model
     _gemini_initialised = True
-    if not settings.GEMINI_API_KEY or "your-" in settings.GEMINI_API_KEY.lower():
-        return None
+    if not settings.GEMINI_API_KEY or "your-" in settings.GEMINI_API_KEY.lower(): return None
     try:
         import google.generativeai as genai
         genai.configure(api_key=settings.GEMINI_API_KEY)
@@ -61,8 +49,7 @@ def _load_groq():
     global _groq_client, _groq_initialised
     if _groq_initialised: return _groq_client
     _groq_initialised = True
-    if not settings.GROQ_API_KEY or "your-" in settings.GROQ_API_KEY.lower():
-        return None
+    if not settings.GROQ_API_KEY or "your-" in settings.GROQ_API_KEY.lower(): return None
     try:
         from groq import Groq
         _groq_client = Groq(api_key=settings.GROQ_API_KEY)
@@ -107,16 +94,14 @@ def chat(message: str, history: List[dict] = None, jobs_context: str = "") -> st
 # ---------------------------------------------------------------------------
 
 RESUME_EXTRACTION_PROMPT = """
-You are an expert AI resume parser. Extract the following information from the resume text provided.
+You are an expert AI resume parser. Extract the following information from the resume text.
 Return ONLY a valid JSON object with these exact keys.
 
-CRITICAL INSTRUCTIONS:
-1. "education": Find the EDUCATION section. Extract the HIGHEST degree, field of study, and university. Format: "BS Computer Science, PMAS Arid Agriculture University".
-2. "work_years": Scan ONLY the EXPERIENCE/WORK HISTORY section. Extract ALL 4-digit years you see in this section (start and end years). DO NOT include education years. Return a list of integers.
-3. "phone": Extract the phone number.
-4. "city": Extract the city (e.g., "Lahore").
-5. "skills": Extract a MAXIMUM of 15 specific TECHNICAL skills (e.g., "Flutter", "Python", "Firebase", "Java"). Do NOT include soft skills, sentences, or achievements.
-6. "bio": Write a VERY short 1-2 sentence summary (maximum 25 words).
+1. "education": Highest degree, field of study, and university.
+2. "phone": Phone number.
+3. "city": City name.
+4. "skills": MAX 15 specific technical skills (e.g., "Flutter", "Python").
+5. "bio": 1-2 sentence summary.
 
 JSON Schema:
 {
@@ -124,21 +109,15 @@ JSON Schema:
   "phone": "Phone number",
   "city": "City name",
   "education": "Degree, University",
-  "work_years": [2020, 2023, 2025],
-  "skills": ["skill1", "skill2", "skill3"],
-  "bio": "A short 1-2 sentence professional summary."
+  "skills": ["skill1", "skill2"],
+  "bio": "A short summary."
 }
 """
 
-def _resume_context(resume_text: str) -> str:
-    if len(resume_text) <= 10000:
-        return resume_text
-    return f"{resume_text[:5000]}\n\n[Resume text omitted]\n\n{resume_text[-5000:]}"
-
 def parse_resume_text(resume_text: str) -> dict:
-    resume_context = _resume_context(resume_text)
+    resume_context = resume_text[:10000]
     parsed_data = {}
-    
+
     # 1. Try Gemini
     model = _load_gemini()
     if model:
@@ -146,10 +125,9 @@ def parse_resume_text(resume_text: str) -> dict:
             prompt = f"{RESUME_EXTRACTION_PROMPT}\n\nResume Text:\n{resume_context}"
             response = model.generate_content(prompt)
             data = _clean_json_response((getattr(response, "text", "") or "").strip())
-            if data:
-                parsed_data = data
+            if data: parsed_data = data
         except Exception as e:
-            print(f"⚠️ Gemini resume parsing failed: {e}")
+            print(f"⚠️ Gemini parsing failed: {e}")
 
     # 2. Try Groq
     client = _load_groq()
@@ -167,36 +145,36 @@ def parse_resume_text(resume_text: str) -> dict:
             )
             text = (response.choices[0].message.content or "").strip()
             data = _clean_json_response(text)
-            if data:
-                parsed_data = data
+            if data: parsed_data = data
         except Exception as e:
-            print(f"⚠️ Groq resume parsing failed: {e}")
+            print(f"⚠️ Groq parsing failed: {e}")
 
-    # 3. PYTHON MATH (100% Accurate)
-    # Get the list of years the AI found in the work section
-    work_years = parsed_data.get("work_years", [])
+    # 3. PYTHON DUAL-CALCULATION METHOD
+    # A. Find all explicit mentions of years (e.g., "4+ years", "6 years", "3 yrs")
+    explicit_years = 0
+    year_matches = re.findall(r'(\d+)\+?\s*(?:years?|yrs?)', resume_context, re.IGNORECASE)
+    if year_matches:
+        explicit_years = max([int(y) for y in year_matches])
+        
+    # B. Find all date years (e.g., 2020, 2023)
+    all_years = re.findall(r'\b(19\d{2}|20[0-2]\d)\b', resume_context)
+    valid_years = [int(y) for y in all_years if 1995 <= int(y) <= datetime.now().year]
     
-    # If the AI failed to find any years, do a brute-force regex scan of the whole text as a backup
-    if not work_years or not isinstance(work_years, list):
-        work_years = [int(y) for y in re.findall(r'(?:20|19)\d{2}', resume_context)]
-    
-    # Filter out future years or invalid years
-    current_year = datetime.now().year
-    valid_years = [int(y) for y in work_years if isinstance(y, (int, float, str)) and str(y).isdigit() and 1990 < int(y) <= current_year]
-    
+    calculated_years = 0
     if valid_years:
-        earliest_year = min(valid_years)
-        calculated_exp = f"{current_year - earliest_year} years"
-        parsed_data["experience"] = calculated_exp
-        print(f"📊 Python calculated exact experience: {calculated_exp} (Earliest year found: {earliest_year})")
+        calculated_years = datetime.now().year - min(valid_years)
+
+    # C. Use the maximum of both (handles missing dates on page 2)
+    final_years = max(calculated_years, explicit_years)
+
+    if final_years > 0:
+        parsed_data["experience"] = f"{final_years} years"
+        print(f"📊 Experience calculated: {final_years} years (Date math: {calculated_years}, Text match: {explicit_years})")
     else:
         parsed_data["experience"] = "Fresher"
-        print("📊 No valid years found anywhere in the text.")
+        print("📊 No years found in text.")
 
-    # Clean up the temporary field
-    parsed_data.pop("work_years", None)
-
-    # Clean up the skills array
+    # Clean skills
     if "skills" in parsed_data and isinstance(parsed_data["skills"], list):
         parsed_data["skills"] = parsed_data["skills"][:15]
 
@@ -205,16 +183,12 @@ def parse_resume_text(resume_text: str) -> dict:
 def _clean_json_response(text: str) -> dict:
     try:
         match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
-        if match:
-            text = match.group(1)
-            
+        if match: text = match.group(1)
         start = text.find('{')
         end = text.rfind('}')
-        if start != -1 and end != -1 and end > start:
-            text = text[start:end+1]
-            
+        if start != -1 and end != -1 and end > start: text = text[start:end+1]
         data = json.loads(text)
         return data if isinstance(data, dict) else {}
     except Exception as e:
-        print(f"❌ Failed to parse AI JSON response: {e}\nRaw: {text}")
+        print(f"❌ Failed to parse AI JSON: {e}")
         return {}
