@@ -109,10 +109,162 @@ JSON Schema:
   "phone": "Phone number",
   "city": "City name",
   "education": "Degree, University",
+  "experience": "Total work experience, or an empty string if it cannot be determined",
   "skills": ["skill1", "skill2"],
   "bio": "A short summary."
 }
+Do not count education, internships, projects, or other non-employment dates as work experience.
 """
+
+
+_MONTH_NAMES = {
+    name.lower(): number
+    for number, names in enumerate(
+        (
+            ("jan", "january"), ("feb", "february"), ("mar", "march"),
+            ("apr", "april"), ("may",), ("jun", "june"), ("jul", "july"),
+            ("aug", "august"), ("sep", "sept", "september"),
+            ("oct", "october"), ("nov", "november"), ("dec", "december"),
+        ),
+        start=1,
+    )
+    for name in names
+}
+def _date_token(prefix: str) -> str:
+    return (
+        rf"(?:(?P<{prefix}_month_name>Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+        rf"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|"
+        rf"Nov(?:ember)?|Dec(?:ember)?)\s+|(?P<{prefix}_numeric_month>0?[1-9]|1[0-2])[/.-])?"
+        rf"(?P<{prefix}_year>19\d{{2}}|20\d{{2}})"
+    )
+
+
+_DATE_RANGE = re.compile(
+    rf"{_date_token('start')}\s*(?:[-–—]\s*|\bto\b\s*)"
+    rf"(?P<end>{_date_token('end')}|present|current|now)",
+    re.IGNORECASE,
+)
+_WORK_SECTION = re.compile(
+    r"^\s*(?:(?:professional|relevant|employment|work)\s+)?"
+    r"(?:work\s+)?(?:experience|history|employment history)\s*:?\s*$",
+    re.IGNORECASE,
+)
+_OTHER_SECTION = re.compile(
+    r"^\s*(?:education|academic|skills|projects|certifications?|"
+    r"volunteer(?:ing)?|awards|references|languages|interests)\s*:?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _experience_section(resume_text: str) -> str:
+    lines = resume_text.splitlines()
+    sections = []
+    active = False
+    current = []
+    found_heading = False
+
+    for line in lines:
+        if _WORK_SECTION.match(line):
+            found_heading = True
+            if active and current:
+                sections.append("\n".join(current))
+            current = []
+            active = True
+        elif _OTHER_SECTION.match(line):
+            if active and current:
+                sections.append("\n".join(current))
+            current = []
+            active = False
+        elif active:
+            current.append(line)
+
+    if active and current:
+        sections.append("\n".join(current))
+    if found_heading:
+        return "\n".join(sections)
+
+    # Some resumes omit section headings. In that case, use date ranges outside
+    # clearly labeled education blocks rather than letting graduation dates count.
+    text_without_education = re.sub(
+        r"(?ims)^\s*(?:education|academic(?:\s+background)?)\s*:?\s*$.*?"
+        r"(?=^\s*(?:experience|employment|work history|skills|projects|"
+        r"certifications?|volunteer(?:ing)?|awards|references|languages)\s*:?\s*$|\Z)",
+        "",
+        resume_text,
+    )
+    return text_without_education
+
+
+def _date_to_month(match: re.Match, prefix: str) -> int:
+    year = int(match.group(f"{prefix}_year"))
+    month_name = match.group(f"{prefix}_month_name")
+    numeric_month = match.group(f"{prefix}_numeric_month")
+    month = _MONTH_NAMES.get(month_name.lower()[:3], 1) if month_name else int(numeric_month or 1)
+    return year * 12 + month - 1
+
+
+def _date_range_end_month(match: re.Match) -> int:
+    end = match.group("end")
+    if end.lower() in {"present", "current", "now"}:
+        now = datetime.now()
+        return now.year * 12 + now.month
+    end_month = _date_to_month(match, "end")
+    if match.group("end_month_name") or match.group("end_numeric_month"):
+        return end_month + 1
+    return int(match.group("end_year")) * 12
+
+
+def _format_experience(months: int) -> str:
+    years, remaining_months = divmod(months, 12)
+    parts = []
+    if years:
+        parts.append(f"{years} year{'s' if years != 1 else ''}")
+    if remaining_months:
+        parts.append(f"{remaining_months} month{'s' if remaining_months != 1 else ''}")
+    return " ".join(parts) or "Less than 1 month"
+
+
+def _calculate_total_experience(resume_text: str) -> str:
+    experience_text = _experience_section(resume_text)
+    now = datetime.now()
+    current_month = now.year * 12 + now.month
+    intervals = []
+
+    for match in _DATE_RANGE.finditer(experience_text):
+        start = _date_to_month(match, "start")
+        end = _date_range_end_month(match)
+        if start < end <= current_month and start >= 1950 * 12:
+            intervals.append((start, end))
+
+    if intervals:
+        intervals.sort()
+        total_months = 0
+        merged_start, merged_end = intervals[0]
+        for start, end in intervals[1:]:
+            if start <= merged_end:
+                merged_end = max(merged_end, end)
+            else:
+                total_months += merged_end - merged_start
+                merged_start, merged_end = start, end
+        total_months += merged_end - merged_start
+        return _format_experience(total_months)
+
+    # If dates are unavailable, preserve an explicit stated duration without
+    # treating graduation years or dates from unrelated sections as experience.
+    explicit = re.findall(
+        r"(?<!\d)(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)"
+        r"(?:\s*(?:and)?\s*(\d+)\s*months?)?\s*(?:of\s+)?(?:work\s+)?experience",
+        experience_text,
+        re.IGNORECASE,
+    )
+    if explicit:
+        years, months = max(
+            ((float(years), int(months or 0)) for years, months in explicit),
+            key=lambda duration: duration[0] * 12 + duration[1],
+        )
+        return _format_experience(int(round(years * 12)) + months)
+    return "Fresher"
+
 
 def parse_resume_text(resume_text: str) -> dict:
     resume_context = resume_text[:10000]
@@ -149,32 +301,8 @@ def parse_resume_text(resume_text: str) -> dict:
         except Exception as e:
             print(f"⚠️ Groq parsing failed: {e}")
 
-    # 3. PYTHON DUAL-CALCULATION METHOD (Punctuation-Proof)
-    explicit_years = 0
-    # Look for digits, then ANY non-alphabetic characters (like +, ), spaces, backslashes), then "year"
-    # This specifically catches "4+ years", "\(4+\) years", and "4 - 5 years"
-    year_matches = re.findall(r'(\d+)[^a-zA-Z0-9]{0,5}(?:years?|yrs?)', resume_context, re.IGNORECASE)
-    if year_matches:
-        explicit_years = max([int(y) for y in year_matches])
-        
-    # Find all date years (e.g., 2020, 2023). 
-    # Removed \b boundaries to catch "01/2020"
-    all_years = re.findall(r'(19\d{2}|20[0-2]\d)', resume_context)
-    valid_years = [int(y) for y in all_years if 1995 <= int(y) <= datetime.now().year]
-    
-    calculated_years = 0
-    if valid_years:
-        calculated_years = datetime.now().year - min(valid_years)
-
-    # Use the maximum of both
-    final_years = max(calculated_years, explicit_years)
-
-    if final_years > 0:
-        parsed_data["experience"] = f"{final_years} years"
-        print(f"📊 Experience calculated: {final_years} years (Date math: {calculated_years}, Text match: {explicit_years})")
-    else:
-        parsed_data["experience"] = "Fresher"
-        print("📊 No years found in text.")
+    parsed_data["experience"] = _calculate_total_experience(resume_context)
+    print(f"📊 Experience calculated: {parsed_data['experience']}")
 
     # Clean skills
     if "skills" in parsed_data and isinstance(parsed_data["skills"], list):
