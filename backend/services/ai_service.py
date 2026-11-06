@@ -106,17 +106,16 @@ def chat(message: str, history: List[dict] = None, jobs_context: str = "") -> st
 # Public API — Resume Parsing
 # ---------------------------------------------------------------------------
 
-# Notice: No f-strings here to prevent breaking Groq's JSON mode
 RESUME_EXTRACTION_PROMPT = """
 You are an expert AI resume parser. Extract the following information from the resume text provided.
 Return ONLY a valid JSON object with these exact keys.
 
 CRITICAL INSTRUCTIONS:
 1. "education": Find the EDUCATION section. Extract the HIGHEST degree, field of study, and university. Format: "BS Computer Science, PMAS Arid Agriculture University".
-2. "experience": Look ONLY at the work history dates in the EXPERIENCE section. Find the EARLIEST starting year. Calculate the total years of experience by subtracting that year from the CURRENT YEAR provided in the user message. Do NOT copy text from the summary (e.g., ignore "4+ years"). Output only the calculated years (e.g., "6 years").
+2. "experience": Output "See Python Calculation" (The Python script will calculate the actual years).
 3. "phone": Extract the phone number.
 4. "city": Extract the city (e.g., "Lahore").
-5. "skills": Extract an array of ALL technical and soft skills listed.
+5. "skills": Extract a MAXIMUM of 15 specific TECHNICAL skills (e.g., "Flutter", "Python", "Firebase", "Java"). Do NOT include soft skills, sentences, or achievements.
 6. "bio": Write a VERY short 1-2 sentence summary (maximum 25 words).
 
 If a field is not found, use an empty string "" or an empty array [].
@@ -127,7 +126,7 @@ JSON Schema:
   "phone": "Phone number",
   "city": "City name",
   "education": "Degree, University",
-  "experience": "Calculated Total Years",
+  "experience": "See Python Calculation",
   "skills": ["skill1", "skill2", "skill3"],
   "bio": "A short 1-2 sentence professional summary."
 }
@@ -142,32 +141,27 @@ def parse_resume_text(resume_text: str) -> dict:
     resume_context = _resume_context(resume_text)
     parsed_data = {}
     
-    current_year = datetime.now().year
-    user_message = f"CURRENT YEAR: {current_year}\n\nResume Text:\n{resume_context}"
-
     # 1. Try Gemini
     model = _load_gemini()
     if model:
         try:
-            prompt = f"{RESUME_EXTRACTION_PROMPT}\n\n{user_message}"
+            prompt = f"{RESUME_EXTRACTION_PROMPT}\n\nResume Text:\n{resume_context}"
             response = model.generate_content(prompt)
             data = _clean_json_response((getattr(response, "text", "") or "").strip())
             if data:
                 parsed_data = data
-                if data.get("education"): 
-                    return data
         except Exception as e:
             print(f"⚠️ Gemini resume parsing failed: {e}")
 
     # 2. Try Groq (Forced JSON Mode)
     client = _load_groq()
-    if client:
+    if client and not parsed_data:
         try:
             response = client.chat.completions.create(
                 model=settings.GROQ_MODEL,
                 messages=[
                     {"role": "system", "content": RESUME_EXTRACTION_PROMPT},
-                    {"role": "user", "content": user_message},
+                    {"role": "user", "content": f"Resume Text:\n{resume_context}"},
                 ],
                 temperature=0.1,
                 max_tokens=2048, 
@@ -176,12 +170,29 @@ def parse_resume_text(resume_text: str) -> dict:
             text = (response.choices[0].message.content or "").strip()
             data = _clean_json_response(text)
             if data:
-                return {
-                    **parsed_data,
-                    **{key: value for key, value in data.items() if value},
-                }
+                parsed_data = data
         except Exception as e:
             print(f"⚠️ Groq resume parsing failed: {e}")
+
+    # 3. PYTHON-SIDE MATH CALCULATION (100% Accurate)
+    # We scan the text for all 4-digit years (e.g., 2020) and do the math ourselves.
+    years = [int(y) for y in re.findall(r'\b(20\d{2})\b', resume_context)]
+    if years:
+        earliest_year = min(years)
+        current_year = datetime.now().year
+        # Ensure it's a reasonable work year
+        if 1990 < earliest_year <= current_year:
+            calculated_exp = f"{current_year - earliest_year} years"
+            parsed_data["experience"] = calculated_exp
+            print(f"📊 Python calculated experience: {calculated_exp} (Earliest year found: {earliest_year})")
+        else:
+            parsed_data["experience"] = "Fresher"
+    else:
+        parsed_data["experience"] = "Fresher"
+
+    # Clean up the skills array just in case the AI ignored the 15-item limit
+    if "skills" in parsed_data and isinstance(parsed_data["skills"], list):
+        parsed_data["skills"] = parsed_data["skills"][:15]
 
     return parsed_data
 
