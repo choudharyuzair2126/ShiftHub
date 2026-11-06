@@ -130,6 +130,8 @@ _MONTH_NAMES = {
     )
     for name in names
 }
+
+
 def _date_token(prefix: str) -> str:
     return (
         rf"(?:(?P<{prefix}_month_name>Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
