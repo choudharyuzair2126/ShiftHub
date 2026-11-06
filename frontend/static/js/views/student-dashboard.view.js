@@ -153,9 +153,29 @@ function openProfile() {
   root.querySelector("[data-profile-form]").addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
+    const btn = e.target.querySelector('button[type="submit"]');
+    const originalText = btn.textContent;
+    
     try {
       const resumeFile = fd.get("resume");
-      if (resumeFile && resumeFile.size > 0) await authVM.uploadResume(resumeFile);
+      
+      // 1. If a resume is uploaded, extract AI data and pause
+      if (resumeFile && resumeFile.size > 0) {
+        btn.disabled = true;
+        btn.textContent = "Parsing Resume…";
+        
+        await authVM.uploadResume(resumeFile);
+        
+        close();
+        toast.success("Resume parsed! Please review the extracted fields.");
+        openProfile(); // Re-open modal with newly populated fields
+        return; // Stop execution here so we don't overwrite with empty form data
+      }
+
+      // 2. Otherwise, just save the manual form updates
+      btn.disabled = true;
+      btn.textContent = "Saving…";
+      
       await authVM.updateProfile({
         full_name: fd.get("full_name"),
         city: fd.get("city"),
@@ -165,10 +185,13 @@ function openProfile() {
         bio: fd.get("bio"),
         skills: (fd.get("skills") || "").split(",").map(s => s.trim()).filter(Boolean),
       });
+      
       close();
       window.dispatchEvent(new Event("hashchange"));
     } catch (err) {
       toast.error(err.message);
+      btn.disabled = false;
+      btn.textContent = originalText;
     }
   });
 }
