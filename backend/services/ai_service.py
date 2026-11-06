@@ -149,22 +149,24 @@ def parse_resume_text(resume_text: str) -> dict:
         except Exception as e:
             print(f"⚠️ Groq parsing failed: {e}")
 
-    # 3. PYTHON DUAL-CALCULATION METHOD
-    # A. Find all explicit mentions of years (e.g., "4+ years", "6 years", "3 yrs")
+    # 3. PYTHON DUAL-CALCULATION METHOD (Punctuation-Proof)
     explicit_years = 0
-    year_matches = re.findall(r'(\d+)\+?\s*(?:years?|yrs?)', resume_context, re.IGNORECASE)
+    # Look for digits, then ANY non-alphabetic characters (like +, ), spaces, backslashes), then "year"
+    # This specifically catches "4+ years", "\(4+\) years", and "4 - 5 years"
+    year_matches = re.findall(r'(\d+)[^a-zA-Z0-9]{0,5}(?:years?|yrs?)', resume_context, re.IGNORECASE)
     if year_matches:
         explicit_years = max([int(y) for y in year_matches])
         
-    # B. Find all date years (e.g., 2020, 2023)
-    all_years = re.findall(r'\b(19\d{2}|20[0-2]\d)\b', resume_context)
+    # Find all date years (e.g., 2020, 2023). 
+    # Removed \b boundaries to catch "01/2020"
+    all_years = re.findall(r'(19\d{2}|20[0-2]\d)', resume_context)
     valid_years = [int(y) for y in all_years if 1995 <= int(y) <= datetime.now().year]
     
     calculated_years = 0
     if valid_years:
         calculated_years = datetime.now().year - min(valid_years)
 
-    # C. Use the maximum of both (handles missing dates on page 2)
+    # Use the maximum of both
     final_years = max(calculated_years, explicit_years)
 
     if final_years > 0:
