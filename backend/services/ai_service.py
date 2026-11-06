@@ -254,9 +254,13 @@ def parse_resume_text(resume_text: str) -> dict:
                     {"role": "user", "content": f"Resume Text:\n{resume_context}"},
                 ],
                 temperature=0.1,
-                max_tokens=800,
+                max_tokens=1200,
+                response_format={"type": "json_object"},
             )
-            text = (response.choices[0].message.content or "").strip()
+            choice = response.choices[0]
+            if choice.finish_reason == "length":
+                print("⚠️ Groq resume parsing response was truncated.")
+            text = (choice.message.content or "").strip()
             data = _clean_json_response(text)
             if data:
                 return {
