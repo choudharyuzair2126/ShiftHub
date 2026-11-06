@@ -3,9 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Job, User
-from ..schemas import JobCreate, JobOut
+from ..schemas import JobCreate, JobDraftRequest, JobDraftResponse, JobOut
 from ..deps import get_current_user, require_role
 from ..services.matching_service import rank_jobs, match_score
+from ..services.ai_service import generate_job_draft
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -37,6 +38,21 @@ def recommended(user: User = Depends(get_current_user), db: Session = Depends(ge
 @router.get("/employer/mine", response_model=List[JobOut])
 def my_jobs(user: User = Depends(require_role("employer")), db: Session = Depends(get_db)):
     return [_enrich(j) for j in db.query(Job).filter(Job.employer_id == user.id).order_by(Job.created_at.desc()).all()]
+
+@router.post("/draft", response_model=JobDraftResponse)
+def create_job_draft(data: JobDraftRequest, user: User = Depends(require_role("employer"))):
+    try:
+        return generate_job_draft(
+            title=data.title,
+            pay=data.pay or "",
+            city=data.city or user.city or "",
+            category=data.category or "General",
+            job_type=data.job_type or "Part-time",
+            shift=data.shift or "",
+            address=data.address or "",
+        )
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
 
 @router.get("/{job_id}")
 def get_job(job_id: int, db: Session = Depends(get_db)):

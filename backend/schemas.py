@@ -57,6 +57,26 @@ class JobCreate(BaseModel):
     required_skills: Optional[List[str]] = []
     shift: Optional[str] = ""
 
+class JobDraftRequest(BaseModel):
+    title: str = Field(min_length=1)
+    pay: Optional[str] = ""
+    city: Optional[str] = ""
+    category: Optional[str] = "General"
+    job_type: Optional[str] = "Part-time"
+    shift: Optional[str] = ""
+    address: Optional[str] = ""
+
+class JobDraftResponse(BaseModel):
+    title: str
+    description: str
+    category: str
+    city: str
+    address: str
+    pay: str
+    job_type: str
+    required_skills: List[str] = Field(default_factory=list)
+    shift: str
+
 class JobOut(BaseModel):
     id: int
     title: str

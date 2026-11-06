@@ -21,6 +21,9 @@ export const jobsVM = {
     const data = await api.post("/api/jobs", payload);
     return Job.from(data);
   },
+  async generateDraft(payload) {
+    return api.post("/api/jobs/draft", payload);
+  },
   async mine() {
     const data = await api.get("/api/jobs/employer/mine");
     return data.map(Job.from);

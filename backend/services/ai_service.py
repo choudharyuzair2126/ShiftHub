@@ -89,6 +89,101 @@ def chat(message: str, history: List[dict] = None, jobs_context: str = "") -> st
 
     return _fallback_reply(message, jobs_context)
 
+
+JOB_DRAFT_PROMPT = """
+Create a clear, concise job posting draft from the employer's details.
+Return only a valid JSON object with these keys:
+{
+  "title": "Job title",
+  "description": "A concise description with responsibilities and qualifications",
+  "category": "One of General, Cafe, Restaurant, Retail, Tutoring, Delivery, Office, Events",
+  "city": "City",
+  "address": "Address or empty string",
+  "pay": "Pay as provided",
+  "job_type": "One of Part-time, Full-time, Internship, Gig",
+  "required_skills": ["skill"],
+  "shift": "Shift or empty string"
+}
+Use the provided title, pay, city, job type, category, address, and shift as authoritative.
+Do not invent an exact location, benefits, employer policies, or requirements not reasonably
+implied by the role. Leave unavailable optional details empty. Keep the description suitable
+for an employer to review and edit before publishing.
+"""
+
+
+def generate_job_draft(
+    title: str,
+    pay: str = "",
+    city: str = "",
+    category: str = "General",
+    job_type: str = "Part-time",
+    shift: str = "",
+    address: str = "",
+) -> dict:
+    job_details = {
+        "title": title.strip(),
+        "pay": pay.strip(),
+        "city": city.strip(),
+        "category": category,
+        "job_type": job_type,
+        "shift": shift.strip(),
+        "address": address.strip(),
+    }
+    prompt = f"{JOB_DRAFT_PROMPT}\n\nEmployer details:\n{json.dumps(job_details)}"
+    model = _load_gemini()
+    if model:
+        try:
+            response = model.generate_content(prompt)
+            data = _clean_json_response((getattr(response, "text", "") or "").strip())
+            if data.get("description"):
+                return _normalize_job_draft(data, job_details)
+        except Exception as e:
+            print(f"⚠️ Gemini job draft generation failed: {e}")
+
+    client = _load_groq()
+    if client:
+        try:
+            response = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": JOB_DRAFT_PROMPT},
+                    {"role": "user", "content": json.dumps(job_details)},
+                ],
+                temperature=0.3,
+                max_tokens=900,
+                response_format={"type": "json_object"},
+            )
+            text = (response.choices[0].message.content or "").strip()
+            data = _clean_json_response(text)
+            if data.get("description"):
+                return _normalize_job_draft(data, job_details)
+        except Exception as e:
+            print(f"⚠️ Groq job draft generation failed: {e}")
+
+    raise RuntimeError("AI job draft generation is unavailable. Check the AI provider configuration and try again.")
+
+
+def _normalize_job_draft(data: dict, provided: dict) -> dict:
+    allowed_categories = {"General", "Cafe", "Restaurant", "Retail", "Tutoring", "Delivery", "Office", "Events"}
+    allowed_job_types = {"Part-time", "Full-time", "Internship", "Gig"}
+    category = data.get("category")
+    job_type = data.get("job_type")
+    skills = data.get("required_skills")
+    return {
+        **provided,
+        "title": provided["title"],
+        "description": str(data["description"]).strip(),
+        "category": category if category in allowed_categories else provided["category"],
+        "city": provided["city"],
+        "address": provided["address"],
+        "pay": provided["pay"],
+        "job_type": job_type if job_type in allowed_job_types else provided["job_type"],
+        "required_skills": [str(skill).strip() for skill in skills if str(skill).strip()]
+        if isinstance(skills, list) else [],
+        "shift": provided["shift"],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Public API — Resume Parsing
 # ---------------------------------------------------------------------------

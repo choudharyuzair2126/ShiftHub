@@ -79,7 +79,10 @@ function openPostModal() {
           <button class="btn btn--icon btn--ghost" data-close>✕</button>
         </div>
         <form data-job-form>
-          <div class="field"><label>Title</label><input class="input" name="title" required /></div>
+          <div class="field"><label>Job title</label><input class="input" name="title" required /></div>
+          <div class="field"><label>Pay</label><input class="input" name="pay" placeholder="Rs 300/hr" /></div>
+          <button type="button" class="btn btn--soft" data-generate-draft>✨ Generate editable draft with AI</button>
+          <p class="text-muted text-sm" data-draft-status>Enter a job title and pay, then generate a draft to review before publishing.</p>
           <div class="grid grid--2" style="gap:.75rem">
             <div class="field"><label>City</label><input class="input" name="city" required /></div>
             <div class="field"><label>Category</label>
@@ -87,7 +90,6 @@ function openPostModal() {
                 ${["General","Cafe","Restaurant","Retail","Tutoring","Delivery","Office","Events"].map(c => `<option>${c}</option>`).join("")}
               </select>
             </div>
-            <div class="field"><label>Pay</label><input class="input" name="pay" placeholder="Rs 300/hr" /></div>
             <div class="field"><label>Job type</label>
               <select class="select" name="job_type"><option>Part-time</option><option>Full-time</option><option>Internship</option><option>Gig</option></select>
             </div>
@@ -108,7 +110,43 @@ function openPostModal() {
   root.querySelector("[data-modal]").addEventListener("click", e => e.stopPropagation());
   function close() { root.innerHTML = ""; }
 
-  root.querySelector("[data-job-form]").addEventListener("submit", async (e) => {
+  const form = root.querySelector("[data-job-form]");
+  const generateButton = form.querySelector("[data-generate-draft]");
+  generateButton.addEventListener("click", async () => {
+    const title = form.elements.namedItem("title").value.trim();
+    if (!title) {
+      toast.error("Enter a job title first.");
+      form.elements.namedItem("title").focus();
+      return;
+    }
+
+    const payload = Object.fromEntries(new FormData(form));
+    delete payload.required_skills;
+    const originalText = generateButton.textContent;
+    generateButton.disabled = true;
+    form.querySelector('button[type="submit"]').disabled = true;
+    generateButton.textContent = "Generating draft…";
+
+    try {
+      const draft = await jobsVM.generateDraft(payload);
+      for (const field of ["title", "description", "category", "city", "address", "pay", "job_type", "shift"]) {
+        const input = form.elements.namedItem(field);
+        if (input && draft[field] != null) input.value = draft[field];
+      }
+      form.elements.namedItem("required_skills").value = (draft.required_skills || []).join(", ");
+      form.querySelector("[data-draft-status]").textContent =
+        "AI draft ready. Review and edit the details, then publish when you're satisfied.";
+      toast.success("Job draft generated. Review it before publishing.");
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      generateButton.disabled = false;
+      generateButton.textContent = originalText;
+      form.querySelector('button[type="submit"]').disabled = false;
+    }
+  });
+
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const payload = Object.fromEntries(fd);
