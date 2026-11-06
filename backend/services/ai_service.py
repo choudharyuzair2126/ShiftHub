@@ -112,13 +112,11 @@ Return ONLY a valid JSON object with these exact keys.
 
 CRITICAL INSTRUCTIONS:
 1. "education": Find the EDUCATION section. Extract the HIGHEST degree, field of study, and university. Format: "BS Computer Science, PMAS Arid Agriculture University".
-2. "experience": Output "See Python Calculation" (The Python script will calculate the actual years).
+2. "experience": If the work history contains explicit dates (e.g., 2020-2023), output "Date Found". If NO DATES are found, estimate the years based on job titles (e.g., 'Senior' = 5+ years, 'Junior' = 1-2 years, 'Intern' = 0-1 year). Output ONLY the estimated number (e.g., "5 years").
 3. "phone": Extract the phone number.
 4. "city": Extract the city (e.g., "Lahore").
 5. "skills": Extract a MAXIMUM of 15 specific TECHNICAL skills (e.g., "Flutter", "Python", "Firebase", "Java"). Do NOT include soft skills, sentences, or achievements.
 6. "bio": Write a VERY short 1-2 sentence summary (maximum 25 words).
-
-If a field is not found, use an empty string "" or an empty array [].
 
 JSON Schema:
 {
@@ -126,7 +124,7 @@ JSON Schema:
   "phone": "Phone number",
   "city": "City name",
   "education": "Degree, University",
-  "experience": "See Python Calculation",
+  "experience": "Date Found or Estimated Years",
   "skills": ["skill1", "skill2", "skill3"],
   "bio": "A short 1-2 sentence professional summary."
 }
@@ -153,7 +151,7 @@ def parse_resume_text(resume_text: str) -> dict:
         except Exception as e:
             print(f"⚠️ Gemini resume parsing failed: {e}")
 
-    # 2. Try Groq (Forced JSON Mode)
+    # 2. Try Groq
     client = _load_groq()
     if client and not parsed_data:
         try:
@@ -174,23 +172,31 @@ def parse_resume_text(resume_text: str) -> dict:
         except Exception as e:
             print(f"⚠️ Groq resume parsing failed: {e}")
 
-    # 3. PYTHON-SIDE MATH CALCULATION (100% Accurate)
-    # We scan the text for all 4-digit years (e.g., 2020) and do the math ourselves.
-    years = [int(y) for y in re.findall(r'\b(20\d{2})\b', resume_context)]
+    # 3. PYTHON HYBRID CALCULATION (Isolate Experience Section)
+    # Try to find the experience section to avoid counting education years
+    exp_section = re.search(r'(?i)(?:EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT)(.*?)(?=EDUCATION|ACADEMIC|CERTIFICATIONS|PROJECTS|$)', resume_context, re.DOTALL)
+    
+    # If we found the section, search for years only within it. Otherwise, search the whole text.
+    search_text = exp_section.group(1) if exp_section else resume_context
+    
+    # Find all 4-digit years (e.g., 2020, 2023)
+    years = [int(y) for y in re.findall(r'\b(19\d{2}|20\d{2})\b', search_text)]
+    
     if years:
         earliest_year = min(years)
         current_year = datetime.now().year
-        # Ensure it's a reasonable work year
         if 1990 < earliest_year <= current_year:
             calculated_exp = f"{current_year - earliest_year} years"
             parsed_data["experience"] = calculated_exp
-            print(f"📊 Python calculated experience: {calculated_exp} (Earliest year found: {earliest_year})")
+            print(f"📊 Python calculated exact experience: {calculated_exp} (Earliest year: {earliest_year})")
         else:
             parsed_data["experience"] = "Fresher"
     else:
-        parsed_data["experience"] = "Fresher"
+        # Fallback: If no dates were found in Python, we trust the AI's estimate from the prompt
+        ai_estimate = parsed_data.get("experience", "Not specified")
+        print(f"📊 No dates found. Using AI estimated experience: {ai_estimate}")
 
-    # Clean up the skills array just in case the AI ignored the 15-item limit
+    # Clean up the skills array
     if "skills" in parsed_data and isinstance(parsed_data["skills"], list):
         parsed_data["skills"] = parsed_data["skills"][:15]
 
