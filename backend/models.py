@@ -15,8 +15,8 @@ class User(Base):
     phone = Column(String(30), default="")
     bio = Column(Text, default="")
     skills = Column(JSON, default=list)
-    education = Column(String(255), default="")   # NEW
-    experience = Column(String(255), default="")  # NEW
+    education = Column(String(255), default="")
+    experience = Column(String(255), default="")
     resume_path = Column(String(500), default="")
     company_name = Column(String(120), default="")
     is_verified = Column(Boolean, default=False)
@@ -64,6 +64,8 @@ class Application(Base):
     job = relationship("Job", back_populates="applications")
     student = relationship("User", back_populates="applications")
     messages = relationship("Message", back_populates="application", cascade="all,delete")
+    # ADDED: Cascade delete for notifications so deleting an application deletes its notifications
+    notifications = relationship("Notification", back_populates="application", cascade="all,delete")
 
 
 class Message(Base):
@@ -91,3 +93,5 @@ class Notification(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="notifications")
+    # ADDED: Back-reference to Application
+    application = relationship("Application", back_populates="notifications")
