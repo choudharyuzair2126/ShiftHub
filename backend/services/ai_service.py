@@ -5,9 +5,6 @@ Provider chain (in order):
     1. Google Gemini   — primary
     2. Groq (Llama 3.3 70B) — fallback
     3. Local canned reply  — last-resort
-
-Any provider failure (missing key, rate limit, timeout, bad response)
-automatically falls through to the next provider.
 """
 from typing import List, Optional
 import json
@@ -18,7 +15,6 @@ from ..config import get_settings
 
 settings = get_settings()
 
-
 # ---------------------------------------------------------------------------
 # System prompt
 # ---------------------------------------------------------------------------
@@ -28,11 +24,6 @@ SYSTEM_PROMPT = (
     "Answer clearly, concisely, and suggest relevant job categories or tips when applicable. "
     "Keep responses under 120 words unless asked otherwise."
 )
-
-
-# ---------------------------------------------------------------------------
-# Last-resort canned reply (no external API needed)
-# ---------------------------------------------------------------------------
 
 def _fallback_reply(message: str, jobs_context: str = "") -> str:
     m = message.lower()
@@ -48,152 +39,72 @@ def _fallback_reply(message: str, jobs_context: str = "") -> str:
         return "Browse the Jobs page — filter by city, category, or shift to see the best matches for you."
     return "I'm here to help with jobs, applications, resumes, and ShiftHub features. What would you like to know?"
 
-
 # ---------------------------------------------------------------------------
-# Provider 1 — Google Gemini
+# Providers Initialization
 # ---------------------------------------------------------------------------
 
 _gemini_model = None
 _gemini_initialised = False
-
+_groq_client = None
+_groq_initialised = False
 
 def _load_gemini():
-    """Lazily initialise the Gemini model. Returns None if unavailable."""
     global _gemini_model, _gemini_initialised
-    if _gemini_initialised:
-        return _gemini_model
+    if _gemini_initialised: return _gemini_model
     _gemini_initialised = True
     if not settings.GEMINI_API_KEY or "your-" in settings.GEMINI_API_KEY.lower():
-        print("ℹ️  Gemini not configured (GEMINI_API_KEY empty or placeholder).")
         return None
     try:
         import google.generativeai as genai
         genai.configure(api_key=settings.GEMINI_API_KEY)
         _gemini_model = genai.GenerativeModel(settings.GEMINI_MODEL)
-        print(f"✅ Gemini initialised ({settings.GEMINI_MODEL})")
         return _gemini_model
-    except Exception as e:
-        print(f"⚠️  Gemini init failed: {type(e).__name__}: {e}")
-        _gemini_model = None
-        return None
-
-
-def _ask_gemini(message: str, history: List[dict], jobs_context: str) -> Optional[str]:
-    """Try Gemini. Returns response text or None on any failure."""
-    model = _load_gemini()
-    if model is None:
-        return None
-    try:
-        convo = [
-            {"role": "user", "parts": [SYSTEM_PROMPT]},
-            {"role": "model", "parts": ["Understood."]},
-        ]
-        for h in (history or [])[-8:]:
-            role = "user" if h.get("role") == "user" else "model"
-            convo.append({"role": role, "parts": [h.get("content", "")]})
-        if jobs_context:
-            convo.append({"role": "user", "parts": [f"Current job listings: {jobs_context}"]})
-        convo.append({"role": "user", "parts": [message]})
-
-        resp = model.generate_content(convo)
-        text = (getattr(resp, "text", "") or "").strip()
-        if text:
-            return text
-        print("⚠️  Gemini returned empty response — falling back to Groq.")
-        return None
-    except Exception as e:
-        print(f"⚠️  Gemini request failed: {type(e).__name__}: {e}")
-        traceback.print_exc(limit=1)
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Provider 2 — Groq (Llama 3.3)
-# ---------------------------------------------------------------------------
-
-_groq_client = None
-_groq_initialised = False
-
+    except Exception: return None
 
 def _load_groq():
-    """Lazily initialise the Groq client. Returns None if unavailable."""
     global _groq_client, _groq_initialised
-    if _groq_initialised:
-        return _groq_client
+    if _groq_initialised: return _groq_client
     _groq_initialised = True
     if not settings.GROQ_API_KEY or "your-" in settings.GROQ_API_KEY.lower():
-        print("ℹ️  Groq not configured (GROQ_API_KEY empty or placeholder).")
         return None
     try:
         from groq import Groq
         _groq_client = Groq(api_key=settings.GROQ_API_KEY)
-        print(f"✅ Groq initialised ({settings.GROQ_MODEL})")
         return _groq_client
-    except Exception as e:
-        print(f"⚠️  Groq init failed: {type(e).__name__}: {e}")
-        _groq_client = None
-        return None
-
-
-def _ask_groq(message: str, history: List[dict], jobs_context: str) -> Optional[str]:
-    """Try Groq. Returns response text or None on any failure."""
-    client = _load_groq()
-    if client is None:
-        return None
-    try:
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for h in (history or [])[-8:]:
-            role = "user" if h.get("role") == "user" else "assistant"
-            messages.append({"role": role, "content": h.get("content", "")})
-        if jobs_context:
-            messages.append({
-                "role": "system",
-                "content": f"Current job listings you can reference: {jobs_context}",
-            })
-        messages.append({"role": "user", "content": message})
-
-        resp = client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=400,
-        )
-        text = (resp.choices[0].message.content or "").strip()
-        if text:
-            return text
-        print("⚠️  Groq returned empty response.")
-        return None
-    except Exception as e:
-        print(f"⚠️  Groq request failed: {type(e).__name__}: {e}")
-        traceback.print_exc(limit=1)
-        return None
-
+    except Exception: return None
 
 # ---------------------------------------------------------------------------
 # Public API — Chat
 # ---------------------------------------------------------------------------
 
 def chat(message: str, history: List[dict] = None, jobs_context: str = "") -> str:
-    """
-    Send a chat message through the provider chain:
-    Gemini → Groq → local canned reply.
-    """
     # 1. Gemini
-    reply = _ask_gemini(message, history or [], jobs_context)
-    if reply:
-        print("🤖 Responded via Gemini")
-        return reply
+    model = _load_gemini()
+    if model:
+        try:
+            convo = [{"role": "user", "parts": [SYSTEM_PROMPT]}, {"role": "model", "parts": ["Understood."]}]
+            for h in (history or [])[-8:]:
+                convo.append({"role": "user" if h.get("role") == "user" else "model", "parts": [h.get("content", "")]})
+            if jobs_context: convo.append({"role": "user", "parts": [f"Job listings: {jobs_context}"]})
+            convo.append({"role": "user", "parts": [message]})
+            resp = model.generate_content(convo)
+            if resp.text: return resp.text.strip()
+        except Exception: pass
 
     # 2. Groq
-    reply = _ask_groq(message, history or [], jobs_context)
-    if reply:
-        print("🤖 Responded via Groq")
-        return reply
+    client = _load_groq()
+    if client:
+        try:
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            for h in (history or [])[-8:]:
+                messages.append({"role": "user" if h.get("role") == "user" else "assistant", "content": h.get("content", "")})
+            if jobs_context: messages.append({"role": "system", "content": f"Job listings: {jobs_context}"})
+            messages.append({"role": "user", "content": message})
+            resp = client.chat.completions.create(model=settings.GROQ_MODEL, messages=messages, temperature=0.7, max_tokens=400)
+            if resp.choices[0].message.content: return resp.choices[0].message.content.strip()
+        except Exception: pass
 
-    # 3. Canned reply
-    print("🤖 All providers failed — using local fallback")
     return _fallback_reply(message, jobs_context)
-
 
 # ---------------------------------------------------------------------------
 # Public API — Resume Parsing
@@ -201,36 +112,39 @@ def chat(message: str, history: List[dict] = None, jobs_context: str = "") -> st
 
 RESUME_EXTRACTION_PROMPT = """
 You are an expert AI resume parser. Extract the following information from the resume text provided.
-Return ONLY a valid JSON object with these exact keys. Do not include markdown code blocks or any other text.
-If a field is not found, use an empty string or an empty array.
-For education, inspect the entire resume and capture the most recent degree or program,
-including its field of study and institution when available. Recognize abbreviations
-such as BS, BSc, BA, MSc, MS, MBA, PhD, and associate degrees.
+Return ONLY a valid JSON object with these exact keys.
+
+CRITICAL INSTRUCTIONS:
+1. "education": Find the EDUCATION section. Extract the HIGHEST degree, field of study, and university. Format: "BS Computer Science, PMAS Arid Agriculture University". NEVER leave this empty if any education is mentioned.
+2. "experience": Look at the EXPERIENCE section. Calculate the TOTAL cumulative duration based on the start/end dates (e.g., "01/2020 - Present" = "6+ years"). Do NOT just list a job title like "Freelance Developer". Output the calculated time.
+3. "phone": Extract the phone number.
+4. "city": Extract the city (e.g., "Lahore").
+5. "skills": Extract an array of all technical and soft skills listed.
+6. "bio": Write a 2-sentence summary of their profile.
+
+If a field is not found, use an empty string "" or an empty array [].
 
 {
   "full_name": "First and Last Name",
   "phone": "Phone number",
   "city": "City name",
-  "education": "Extract the HIGHEST or MOST RECENT degree. Format as 'Degree, University' (e.g., BS Computer Science, University of Sahiwal). NEVER leave this empty if any education is mentioned.",
-  "experience": "Calculate the TOTAL cumulative duration of work experience based on the start/end dates in the resume (e.g., '2 years 6 months', '6 months'). Do NOT just list a job title. Do NOT just write 'Freelance Developer'. You must output the calculated time.",
+  "education": "Degree, University",
+  "experience": "Calculated Total Years",
   "skills": ["skill1", "skill2", "skill3"],
   "bio": "A short 2-3 sentence professional summary."
 }
-
-If you cannot calculate the exact time but see a year (e.g., 2020-2023), calculate it (3 years).
 """
-
 
 def _resume_context(resume_text: str) -> str:
     if len(resume_text) <= 12000:
         return resume_text
     return f"{resume_text[:6000]}\n\n[Resume text omitted]\n\n{resume_text[-6000:]}"
 
-
 def parse_resume_text(resume_text: str) -> dict:
     resume_context = _resume_context(resume_text)
     parsed_data = {}
 
+    # 1. Try Gemini
     model = _load_gemini()
     if model:
         try:
@@ -239,11 +153,13 @@ def parse_resume_text(resume_text: str) -> dict:
             data = _clean_json_response((getattr(response, "text", "") or "").strip())
             if data:
                 parsed_data = data
-                if data.get("education"):
+                # If Gemini successfully got the education, we can return early
+                if data.get("education"): 
                     return data
         except Exception as e:
             print(f"⚠️ Gemini resume parsing failed: {e}")
 
+    # 2. Try Groq (Forced JSON Mode)
     client = _load_groq()
     if client:
         try:
@@ -254,15 +170,17 @@ def parse_resume_text(resume_text: str) -> dict:
                     {"role": "user", "content": f"Resume Text:\n{resume_context}"},
                 ],
                 temperature=0.1,
-                max_tokens=1200,
-                response_format={"type": "json_object"},
+                max_tokens=1000,
+                response_format={"type": "json_object"} # <--- Forces valid JSON
             )
             choice = response.choices[0]
             if choice.finish_reason == "length":
                 print("⚠️ Groq resume parsing response was truncated.")
+                
             text = (choice.message.content or "").strip()
             data = _clean_json_response(text)
             if data:
+                # Merge Groq's data with Gemini's data (if any)
                 return {
                     **parsed_data,
                     **{key: value for key, value in data.items() if value},
@@ -272,18 +190,14 @@ def parse_resume_text(resume_text: str) -> dict:
 
     return parsed_data
 
-
 def _clean_json_response(text: str) -> dict:
-    """
-    Bulletproof JSON extractor.
-    1. Tries to find text wrapped in ```json ... ```
-    2. Finds the first '{' and last '}' and extracts everything between.
-    """
     try:
+        # Extract JSON from markdown code blocks if present
         match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
         if match:
             text = match.group(1)
             
+        # Extract everything between the first '{' and last '}'
         start = text.find('{')
         end = text.rfind('}')
         if start != -1 and end != -1 and end > start:
@@ -292,5 +206,5 @@ def _clean_json_response(text: str) -> dict:
         data = json.loads(text)
         return data if isinstance(data, dict) else {}
     except Exception as e:
-        print(f"❌ Failed to parse AI JSON response: {e}")
+        print(f"❌ Failed to parse AI JSON response: {e}\nRaw: {text}")
         return {}
