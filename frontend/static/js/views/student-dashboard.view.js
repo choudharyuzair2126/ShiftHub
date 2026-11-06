@@ -125,6 +125,13 @@ function openProfile() {
           <h3 style="margin:0">Edit profile</h3>
           <button class="btn btn--icon btn--ghost" data-close>✕</button>
         </div>
+        
+        <!-- Helpful Tip Banner -->
+        <div style="background:rgba(99, 102, 241, 0.1);border:1px solid rgba(99, 102, 241, 0.2);color:var(--brand-700);padding:.75rem;border-radius:var(--radius-sm);font-size:.85rem;margin-bottom:1.25rem;display:flex;gap:.5rem;align-items:center;">
+          <span style="font-size:1.2rem">💡</span>
+          <span><b>Tip:</b> Upload your CV below to automatically extract and fill your profile details!</span>
+        </div>
+
         <form data-profile-form>
           <div class="field"><label>Full name</label><input class="input" name="full_name" value="${escape(u.full_name)}" /></div>
           <div class="field"><label>City</label><input class="input" name="city" value="${escape(u.city || "")}" /></div>
@@ -133,14 +140,18 @@ function openProfile() {
           <div class="field"><label>Total Experience</label><input class="input" name="experience" value="${escape(u.experience || "")}" placeholder="e.g. 2 years" /></div>
           <div class="field"><label>Skills (comma-separated)</label><input class="input" name="skills" value="${(u.skills || []).join(", ")}" /></div>
           <div class="field"><label>Bio</label><textarea class="textarea" name="bio">${escape(u.bio || "")}</textarea></div>
-          <div class="field">
+          
+          <div class="field" style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px dashed var(--c-border);">
             <label>Resume / CV</label>
             <input class="input" type="file" name="resume" accept=".pdf,.doc,.docx" />
-            ${u.resume_path ? `<div class="text-xs text-muted mt-1">Current: <a href="${u.resume_path}" target="_blank" rel="noopener">View on Cloudinary</a></div>` : ""}
+            <div class="text-xs text-muted mt-1" id="cv-status-text">
+              ${u.resume_path ? `Current: <a href="${u.resume_path}" target="_blank" rel="noopener">View on Cloudinary</a>` : "Select a PDF or Word file to auto-fill your profile."}
+            </div>
           </div>
-          <div class="flex gap-2" style="justify-content:flex-end">
+          
+          <div class="flex gap-2" style="justify-content:flex-end; margin-top:1.5rem;">
             <button type="button" class="btn btn--ghost" data-close>Cancel</button>
-            <button type="submit" class="btn btn--primary">Save changes</button>
+            <button type="submit" class="btn btn--primary" id="save-profile-btn">Save changes</button>
           </div>
         </form>
       </div>
@@ -150,41 +161,48 @@ function openProfile() {
   root.querySelector("[data-modal]").addEventListener("click", e => e.stopPropagation());
   function close() { root.innerHTML = ""; }
 
-  const profileForm = root.querySelector("[data-profile-form]");
-  const resumeInput = profileForm.querySelector('input[name="resume"]');
-  resumeInput.addEventListener("change", async () => {
-    const resumeFile = resumeInput.files[0];
-    if (!resumeFile) return;
+  // ---- IMMEDIATE CV PROCESSING ON FILE SELECT ----
+  const fileInput = root.querySelector('input[name="resume"]');
+  const saveBtn = root.querySelector("#save-profile-btn");
+  const statusText = root.querySelector("#cv-status-text");
 
-    const submitButton = profileForm.querySelector('button[type="submit"]');
-    const originalText = submitButton.textContent;
-    resumeInput.disabled = true;
-    submitButton.disabled = true;
-    submitButton.textContent = "Parsing Resume…";
+  fileInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Disable save button while processing
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Processing CV...";
+    statusText.innerHTML = `<span style="color:var(--brand-600);font-weight:600">⏳ AI is reading your resume...</span>`;
 
     try {
-      await authVM.uploadResume(resumeFile);
+      await authVM.uploadResume(file);
+      
+      statusText.innerHTML = `<span style="color:var(--mint-500);font-weight:600">✅ CV processed successfully!</span>`;
+      toast.success("CV processed! Profile updated automatically.");
+      
+      // Refresh user data and re-open modal to show the newly populated fields
+      await authVM.loadMe();
       close();
       openProfile();
+
     } catch (err) {
-      toast.error(err.message);
-      resumeInput.value = "";
-      resumeInput.disabled = false;
-      submitButton.disabled = false;
-      submitButton.textContent = originalText;
+      toast.error(err.message || "Failed to process CV");
+      statusText.innerHTML = `Current: <span style="color:var(--c-danger)">Failed to process.</span>`;
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save changes";
     }
   });
 
-  profileForm.addEventListener("submit", async (e) => {
+  // ---- SAVE TEXT FIELDS ONLY ----
+  root.querySelector("[data-profile-form]").addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const btn = e.target.querySelector('button[type="submit"]');
-    const originalText = btn.textContent;
     
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
+
     try {
-      btn.disabled = true;
-      btn.textContent = "Saving…";
-      
       await authVM.updateProfile({
         full_name: fd.get("full_name"),
         city: fd.get("city"),
@@ -194,13 +212,12 @@ function openProfile() {
         bio: fd.get("bio"),
         skills: (fd.get("skills") || "").split(",").map(s => s.trim()).filter(Boolean),
       });
-      
       close();
       window.dispatchEvent(new Event("hashchange"));
     } catch (err) {
       toast.error(err.message);
-      btn.disabled = false;
-      btn.textContent = originalText;
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save changes";
     }
   });
 }
