@@ -203,6 +203,9 @@ RESUME_EXTRACTION_PROMPT = """
 You are an expert AI resume parser. Extract the following information from the resume text provided.
 Return ONLY a valid JSON object with these exact keys. Do not include markdown code blocks or any other text.
 If a field is not found, use an empty string or an empty array.
+For education, inspect the entire resume and capture the most recent degree or program,
+including its field of study and institution when available. Recognize abbreviations
+such as BS, BSc, BA, MSc, MS, MBA, PhD, and associate degrees.
 
 {
   "full_name": "First and Last Name",
@@ -218,15 +221,26 @@ If you cannot calculate the exact time but see a year (e.g., 2020-2023), calcula
 """
 
 
+def _resume_context(resume_text: str) -> str:
+    if len(resume_text) <= 12000:
+        return resume_text
+    return f"{resume_text[:6000]}\n\n[Resume text omitted]\n\n{resume_text[-6000:]}"
+
+
 def parse_resume_text(resume_text: str) -> dict:
+    resume_context = _resume_context(resume_text)
+    parsed_data = {}
+
     model = _load_gemini()
     if model:
         try:
-            prompt = f"{RESUME_EXTRACTION_PROMPT}\n\nResume Text:\n{resume_text[:4000]}"
+            prompt = f"{RESUME_EXTRACTION_PROMPT}\n\nResume Text:\n{resume_context}"
             response = model.generate_content(prompt)
             data = _clean_json_response((getattr(response, "text", "") or "").strip())
             if data:
-                return data
+                parsed_data = data
+                if data.get("education"):
+                    return data
         except Exception as e:
             print(f"⚠️ Gemini resume parsing failed: {e}")
 
@@ -237,17 +251,22 @@ def parse_resume_text(resume_text: str) -> dict:
                 model=settings.GROQ_MODEL,
                 messages=[
                     {"role": "system", "content": RESUME_EXTRACTION_PROMPT},
-                    {"role": "user", "content": f"Resume Text:\n{resume_text[:4000]}"},
+                    {"role": "user", "content": f"Resume Text:\n{resume_context}"},
                 ],
                 temperature=0.1,
                 max_tokens=800,
             )
             text = (response.choices[0].message.content or "").strip()
-            return _clean_json_response(text)
+            data = _clean_json_response(text)
+            if data:
+                return {
+                    **parsed_data,
+                    **{key: value for key, value in data.items() if value},
+                }
         except Exception as e:
             print(f"⚠️ Groq resume parsing failed: {e}")
 
-    return {}
+    return parsed_data
 
 
 def _clean_json_response(text: str) -> dict:
