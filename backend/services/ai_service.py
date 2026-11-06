@@ -112,7 +112,7 @@ Return ONLY a valid JSON object with these exact keys.
 
 CRITICAL INSTRUCTIONS:
 1. "education": Find the EDUCATION section. Extract the HIGHEST degree, field of study, and university. Format: "BS Computer Science, PMAS Arid Agriculture University".
-2. "experience": If the work history contains explicit dates (e.g., 2020-2023), output "Date Found". If NO DATES are found, estimate the years based on job titles (e.g., 'Senior' = 5+ years, 'Junior' = 1-2 years, 'Intern' = 0-1 year). Output ONLY the estimated number (e.g., "5 years").
+2. "experience": Output "Calculating..." (The Python script will override this with accurate math based on dates).
 3. "phone": Extract the phone number.
 4. "city": Extract the city (e.g., "Lahore").
 5. "skills": Extract a MAXIMUM of 15 specific TECHNICAL skills (e.g., "Flutter", "Python", "Firebase", "Java"). Do NOT include soft skills, sentences, or achievements.
@@ -124,7 +124,7 @@ JSON Schema:
   "phone": "Phone number",
   "city": "City name",
   "education": "Degree, University",
-  "experience": "Date Found or Estimated Years",
+  "experience": "Calculating...",
   "skills": ["skill1", "skill2", "skill3"],
   "bio": "A short 1-2 sentence professional summary."
 }
@@ -172,12 +172,16 @@ def parse_resume_text(resume_text: str) -> dict:
         except Exception as e:
             print(f"⚠️ Groq resume parsing failed: {e}")
 
-    # 3. PYTHON HYBRID CALCULATION (Isolate Experience Section)
-    # Try to find the experience section to avoid counting education years
-    exp_section = re.search(r'(?i)(?:EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT)(.*?)(?=EDUCATION|ACADEMIC|CERTIFICATIONS|PROJECTS|$)', resume_context, re.DOTALL)
+    # 3. PYTHON HYBRID CALCULATION (Bulletproof Regex)
+    # Search for the Experience section (handles ## EXPERIENCE, WORK HISTORY, etc.)
+    exp_match = re.search(
+        r'(?i)(?:#*\s*(?:EXPERIENCE|EMPLOYMENT|WORK HISTORY)\s*#*)(.*?)(?=#*\s*(?:EDUCATION|ACADEMIC|CERTIFICATIONS|PROJECTS|SKILLS)\s*#*|$)', 
+        resume_context, 
+        re.DOTALL
+    )
     
-    # If we found the section, search for years only within it. Otherwise, search the whole text.
-    search_text = exp_section.group(1) if exp_section else resume_context
+    # If we found the experience section, search only there. Otherwise, search the whole text.
+    search_text = exp_match.group(1) if exp_match else resume_context
     
     # Find all 4-digit years (e.g., 2020, 2023)
     years = [int(y) for y in re.findall(r'\b(19\d{2}|20\d{2})\b', search_text)]
@@ -192,9 +196,10 @@ def parse_resume_text(resume_text: str) -> dict:
         else:
             parsed_data["experience"] = "Fresher"
     else:
-        # Fallback: If no dates were found in Python, we trust the AI's estimate from the prompt
-        ai_estimate = parsed_data.get("experience", "Not specified")
-        print(f"📊 No dates found. Using AI estimated experience: {ai_estimate}")
+        parsed_data["experience"] = parsed_data.get("experience", "Fresher")
+        if parsed_data["experience"] == "Calculating...":
+            parsed_data["experience"] = "Fresher"
+        print(f"📊 No dates found. Using AI/fallback experience: {parsed_data['experience']}")
 
     # Clean up the skills array
     if "skills" in parsed_data and isinstance(parsed_data["skills"], list):
