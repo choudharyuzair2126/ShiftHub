@@ -437,21 +437,78 @@ def parse_resume_text(resume_text: str) -> dict:
 # ---------------------------------------------------------------------------
 # Public API — AI Job Match Evaluation
 # ---------------------------------------------------------------------------
+# ... [Keep everything at the top of the file the same] ...
+
+# ---------------------------------------------------------------------------
+# Public API — AI Job Match Evaluation
+# ---------------------------------------------------------------------------
 
 MATCH_EVALUATION_PROMPT = """
-You are an expert technical recruiter. Evaluate how well the following student fits the job description.
-Give a match score from 0 to 100.
-- 80-100: Excellent fit (has all required skills, relevant education/experience).
-- 50-79: Good fit (has some skills, but missing a few).
-- 0-49: Poor fit (missing core skills, different field entirely).
+You are an expert AI career advisor. Evaluate how well the student fits the job description.
+
+CRITICAL RULE: Prioritize domain/industry match above ALL else. 
+If the student's core skills are technical (e.g., Flutter, Python, Design) and the job is a menial/labor role (e.g., Waiter, Delivery), the score MUST be below 20, regardless of soft skills like "Communication" or location. A mismatched industry is a poor fit.
+
+Give a match score from 0 to 100:
+- 80-100: Excellent fit (Strong domain match, has most required skills).
+- 50-79: Good fit (Domain match, has some skills, missing a few).
+- 20-49: Weak fit (Wrong domain, but some transferable skills).
+- 0-19: Poor fit (Completely wrong domain).
 
 Return ONLY a valid JSON object with these exact keys. Do not include markdown code blocks.
 {
   "score": 85,
-  "reason": "The student has the required Python skills and a relevant degree, but lacks professional experience."
+  "reason": "The student has the required Flutter and Dart skills, perfectly matching the job's technical requirements."
 }
 """
 
+def evaluate_match(student: User, job: Job) -> dict:
+    """Uses AI to evaluate the genuine fit between a student and a job."""
+    student_context = f"""
+    Student Profile:
+    - Education: {student.education or 'None'}
+    - Experience: {student.experience or 'None'}
+    - Skills: {', '.join(student.skills or [])}
+    - Bio: {student.bio or 'None'}
+    """
+    
+    job_context = f"""
+    Job Details:
+    - Title: {job.title}
+    - Category: {job.category}
+    - Required Skills: {', '.join(job.required_skills or [])}
+    - Description: {job.description}
+    """
+
+    prompt = f"{MATCH_EVALUATION_PROMPT}\n\n{student_context}\n\n{job_context}"
+
+    model = _load_gemini()
+    if model:
+        try:
+            resp = model.generate_content(prompt)
+            text = (getattr(resp, "text", "") or "").strip()
+            return _clean_json_response(text)
+        except Exception as e:
+            print(f"⚠️ Gemini match eval failed: {e}")
+
+    client = _load_groq()
+    if client:
+        try:
+            resp = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=150,
+                response_format={"type": "json_object"}
+            )
+            text = (resp.choices[0].message.content or "").strip()
+            return _clean_json_response(text)
+        except Exception as e:
+            print(f"⚠️ Groq match eval failed: {e}")
+
+    return {}
+
+# ... [Keep _clean_json_response the same] ...
 def evaluate_match(student: User, job: Job) -> dict:
     """Uses AI to evaluate the genuine fit between a student and a job."""
     student_context = f"""
