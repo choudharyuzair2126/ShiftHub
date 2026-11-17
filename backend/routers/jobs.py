@@ -2,11 +2,11 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import Job, User
+from ..models import Job, User, Application # <-- Import Application
 from ..schemas import JobCreate, JobDraftRequest, JobDraftResponse, JobOut
 from ..deps import get_current_user, require_role
 from ..services.matching_service import rank_jobs, match_score
-from ..services.ai_service import generate_job_draft, evaluate_match # Added evaluate_match
+from ..services.ai_service import generate_job_draft, evaluate_match
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -34,17 +34,28 @@ def recommended(user: User = Depends(get_current_user), db: Session = Depends(ge
     if user.role != "student":
         return []
 
-    jobs = db.query(Job).filter(Job.is_active == True).all()
+    # 1. Find all jobs the user has ALREADY applied to
+    applied_apps = db.query(Application.job_id).filter(Application.student_id == user.id).all()
+    applied_job_ids = [app[0] for app in applied_apps]
+
+    # 2. Fetch active jobs, EXCLUDING the ones already applied to
+    jobs = db.query(Job).filter(
+        Job.is_active == True,
+        Job.id.notin_(applied_job_ids) # <--- THE FIX
+    ).all()
     
-    # 1. Fast rule-based pre-filtering
+    if not jobs:
+        return []
+    
+    # 3. Fast rule-based pre-filtering
     ranked = rank_jobs(user, jobs)
     
-    # 2. Take only the Top 8 jobs from the basic algorithm to save API time/limits
-    top_candidates = ranked[:8]
+    # 4. Take the Top 12 jobs to ensure we don't miss tech jobs hidden by local menial jobs
+    top_candidates = ranked[:12]
     
     final_results = []
     
-    # 3. AI Evaluation for genuine scoring
+    # 5. AI Evaluation for genuine scoring
     for item in top_candidates:
         job = item["job"]
         base_score = item["score"]
@@ -53,19 +64,20 @@ def recommended(user: User = Depends(get_current_user), db: Session = Depends(ge
         ai_result = evaluate_match(user, job)
         
         final_score = base_score
-        reason = "Matches your skills and location."
+        reason = "Matches your skills, education, and location."
         
+        # If AI responds successfully, use its score and reason
         if ai_result and "score" in ai_result:
             final_score = float(ai_result["score"])
-            reason = ai_result.get("reason", "")
+            reason = ai_result.get("reason", reason)
             
-        # 4. Only keep jobs that hit the 50% threshold (using AI score)
+        # 6. Only keep jobs that hit the 50% threshold
         if final_score >= 50.0:
             job_data = _enrich(job).model_dump()
-            job_data["match_reason"] = reason # Add the AI explanation
+            job_data["match_reason"] = reason 
             final_results.append({"job": job_data, "score": final_score})
 
-    # Sort by the new AI score just in case
+    # Sort by the final AI score descending
     final_results.sort(key=lambda x: x["score"], reverse=True)
 
     return final_results
