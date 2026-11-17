@@ -93,6 +93,8 @@ class JobOut(BaseModel):
     employer_id: int
     employer_name: Optional[str] = None
     company_name: Optional[str] = None
+    match_reason: Optional[str] = None # <--- NEW: Stores the AI reasoning
+    
     class Config:
         from_attributes = True
 

@@ -88,7 +88,7 @@ export async function studentDashboardView(ctx) {
         <div class="grid grid--3 mt-2">
           ${recs.slice(0, 6).map(r => `
             <a href="#/jobs/${r.job.id}" style="text-decoration:none;color:inherit">
-              <div class="card card--hover">
+              <div class="card card--hover" style="display:flex;flex-direction:column;height:100%">
                 <div class="card__head">
                   <div>
                     <div class="card__title">${escape(r.job.title)}</div>
@@ -96,17 +96,32 @@ export async function studentDashboardView(ctx) {
                   </div>
                   <div class="match" style="--p:${r.score}">${r.score}</div>
                 </div>
+                
+                <!-- AI REASON DISPLAY -->
+                ${r.job.match_reason ? `
+                  <div style="background:var(--c-bg-soft);padding:.6rem;border-radius:var(--radius-sm);font-size:.75rem;color:var(--c-text-soft);margin-top:.5rem;flex:1;">
+                    <span style="color:var(--brand-500);font-weight:700">✨ AI Insight:</span> ${escape(r.job.match_reason)}
+                  </div>
+                ` : ""}
+                
                 <div class="card__meta mt-2"><span>💰 ${escape(r.job.payLabel)}</span></div>
               </div>
             </a>`).join("")}
-        </div>` : `<div class="empty mt-2"><p>No recommendations yet — add skills to your profile.</p></div>`}
+        </div>` : `
+        <div class="empty mt-2" style="padding: 3rem 1rem;">
+          <div class="empty__icon">🎯</div>
+          <h3>No strong matches found</h3>
+          <p style="max-width: 400px; margin: 0 auto;">We only show jobs where your match score is 50% or higher. Try adding more skills, your latest education, or your city in your profile to get better recommendations!</p>
+          <button class="btn btn--primary mt-4" data-profile>Update Profile</button>
+        </div>`}
     </div>
   </section>`;
 }
 
 function bind() {
-  const btn = document.querySelector("[data-profile]");
-  if (btn) btn.addEventListener("click", openProfile);
+  document.querySelectorAll("[data-profile]").forEach(btn => {
+    btn.addEventListener("click", openProfile);
+  });
 
   document.querySelectorAll("[data-chat]").forEach(b => {
     b.addEventListener("click", () => {

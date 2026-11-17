@@ -6,7 +6,7 @@ from ..models import Job, User
 from ..schemas import JobCreate, JobDraftRequest, JobDraftResponse, JobOut
 from ..deps import get_current_user, require_role
 from ..services.matching_service import rank_jobs, match_score
-from ..services.ai_service import generate_job_draft
+from ..services.ai_service import generate_job_draft, evaluate_match # Added evaluate_match
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -31,9 +31,44 @@ def list_jobs(
 
 @router.get("/recommended")
 def recommended(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "student":
+        return []
+
     jobs = db.query(Job).filter(Job.is_active == True).all()
+    
+    # 1. Fast rule-based pre-filtering
     ranked = rank_jobs(user, jobs)
-    return [{"job": _enrich(r["job"]).model_dump(), "score": r["score"]} for r in ranked[:20]]
+    
+    # 2. Take only the Top 8 jobs from the basic algorithm to save API time/limits
+    top_candidates = ranked[:8]
+    
+    final_results = []
+    
+    # 3. AI Evaluation for genuine scoring
+    for item in top_candidates:
+        job = item["job"]
+        base_score = item["score"]
+        
+        # Ask AI to evaluate
+        ai_result = evaluate_match(user, job)
+        
+        final_score = base_score
+        reason = "Matches your skills and location."
+        
+        if ai_result and "score" in ai_result:
+            final_score = float(ai_result["score"])
+            reason = ai_result.get("reason", "")
+            
+        # 4. Only keep jobs that hit the 50% threshold (using AI score)
+        if final_score >= 50.0:
+            job_data = _enrich(job).model_dump()
+            job_data["match_reason"] = reason # Add the AI explanation
+            final_results.append({"job": job_data, "score": final_score})
+
+    # Sort by the new AI score just in case
+    final_results.sort(key=lambda x: x["score"], reverse=True)
+
+    return final_results
 
 @router.get("/employer/mine", response_model=List[JobOut])
 def my_jobs(user: User = Depends(require_role("employer")), db: Session = Depends(get_db)):

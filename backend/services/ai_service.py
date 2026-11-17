@@ -8,6 +8,7 @@ import traceback
 from datetime import datetime
 
 from ..config import get_settings
+from ..models import User, Job # Added for type hinting in evaluate_match
 
 settings = get_settings()
 
@@ -284,8 +285,6 @@ def _experience_section(resume_text: str) -> str:
     if found_heading:
         return "\n".join(sections)
 
-    # Some resumes omit section headings. In that case, use date ranges outside
-    # clearly labeled education blocks rather than letting graduation dates count.
     return _resume_without_education(resume_text)
 
 
@@ -377,8 +376,6 @@ def _calculate_total_experience(resume_text: str) -> str:
         total_months += merged_end - merged_start
         return _format_experience(total_months)
 
-    # If dates are unavailable, preserve an explicit stated duration without
-    # treating graduation years or dates from unrelated sections as experience.
     explicit = re.findall(
         r"(?<!\d)(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)"
         r"(?:\s*(?:and)?\s*(\d+)\s*months?)?\s*(?:of\s+)?"
@@ -399,7 +396,6 @@ def parse_resume_text(resume_text: str) -> dict:
     resume_context = resume_text[:10000]
     parsed_data = {}
 
-    # 1. Try Gemini
     model = _load_gemini()
     if model:
         try:
@@ -410,7 +406,6 @@ def parse_resume_text(resume_text: str) -> dict:
         except Exception as e:
             print(f"⚠️ Gemini parsing failed: {e}")
 
-    # 2. Try Groq
     client = _load_groq()
     if client and not parsed_data:
         try:
@@ -433,11 +428,76 @@ def parse_resume_text(resume_text: str) -> dict:
     parsed_data["experience"] = _calculate_total_experience(resume_context)
     print(f"📊 Experience calculated: {parsed_data['experience']}")
 
-    # Clean skills
     if "skills" in parsed_data and isinstance(parsed_data["skills"], list):
         parsed_data["skills"] = parsed_data["skills"][:15]
 
     return parsed_data
+
+
+# ---------------------------------------------------------------------------
+# Public API — AI Job Match Evaluation
+# ---------------------------------------------------------------------------
+
+MATCH_EVALUATION_PROMPT = """
+You are an expert technical recruiter. Evaluate how well the following student fits the job description.
+Give a match score from 0 to 100.
+- 80-100: Excellent fit (has all required skills, relevant education/experience).
+- 50-79: Good fit (has some skills, but missing a few).
+- 0-49: Poor fit (missing core skills, different field entirely).
+
+Return ONLY a valid JSON object with these exact keys. Do not include markdown code blocks.
+{
+  "score": 85,
+  "reason": "The student has the required Python skills and a relevant degree, but lacks professional experience."
+}
+"""
+
+def evaluate_match(student: User, job: Job) -> dict:
+    """Uses AI to evaluate the genuine fit between a student and a job."""
+    student_context = f"""
+    Student Profile:
+    - Education: {student.education or 'None'}
+    - Experience: {student.experience or 'None'}
+    - Skills: {', '.join(student.skills or [])}
+    - Bio: {student.bio or 'None'}
+    """
+    
+    job_context = f"""
+    Job Details:
+    - Title: {job.title}
+    - Category: {job.category}
+    - Required Skills: {', '.join(job.required_skills or [])}
+    - Description: {job.description}
+    """
+
+    prompt = f"{MATCH_EVALUATION_PROMPT}\n\n{student_context}\n\n{job_context}"
+
+    model = _load_gemini()
+    if model:
+        try:
+            resp = model.generate_content(prompt)
+            text = (getattr(resp, "text", "") or "").strip()
+            return _clean_json_response(text)
+        except Exception as e:
+            print(f"⚠️ Gemini match eval failed: {e}")
+
+    client = _load_groq()
+    if client:
+        try:
+            resp = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=150,
+                response_format={"type": "json_object"}
+            )
+            text = (resp.choices[0].message.content or "").strip()
+            return _clean_json_response(text)
+        except Exception as e:
+            print(f"⚠️ Groq match eval failed: {e}")
+
+    return {}
+
 
 def _clean_json_response(text: str) -> dict:
     try:
